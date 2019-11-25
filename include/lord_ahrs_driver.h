@@ -543,6 +543,18 @@ struct LORDAHRSRollPitchYaw
   float roll_rad = 0.0f;
   float pitch_rad = 0.0f;
   float yaw_rad = 0.0f;
+
+  LORDAHRSRollPitchYaw() :
+    roll_rad{0.0f},
+    pitch_rad{0.0f},
+    yaw_rad{0.0f}
+  {}
+
+  LORDAHRSRollPitchYaw(float r, float p, float y) :
+    roll_rad{r},
+    pitch_rad{r},
+    yaw_rad{r}
+  {}
 };
 
 struct LORDAHRSReferencePosition
