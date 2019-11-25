@@ -106,7 +106,7 @@ bool LORDMIPField::extractVal(void *dest, size_t binary_offset, size_t DATA_SIZE
 
   // Wire data is big endian
   uint8_t *byte_swapped = (uint8_t *)swap_buffer;
-  for (int i = 0; i < DATA_SIZE; ++i)
+  for (size_t i = 0; i < DATA_SIZE; ++i)
   {
     *(byte_swapped + DATA_SIZE - i - 1) = field_data[binary_offset + i];
   }
@@ -431,7 +431,7 @@ bool LORDAHRSDriver::receiveLatestData(AHRSDataSet &data_out)
   LORDMIPPkt pkt_out_2;
   // Allow twice as long as necessary
   const float rate_for_timeout_hz = (data_stream_rate_hz > 0.0f)? data_stream_rate_hz : 1.0f;
-  std::chrono::milliseconds timeout = std::chrono::duration<int, std::milli>((int)(2000.0f / data_stream_rate_hz));
+  std::chrono::milliseconds timeout = std::chrono::duration<int, std::milli>((int)(2000.0f / rate_for_timeout_hz));
   if ((false == rcvPktBlocking(pkt_out_1, timeout)) ||
       (false == rcvPktBlocking(pkt_out_2, timeout)))
     {
@@ -637,6 +637,10 @@ bool LORDAHRSDriver::queryDeviceInfo()
 
   dev_info.fw_version = (resp_field->field_data[0] << 8) + resp_field->field_data[1];
   // The others are all 16 char strings
+  dev_info.model_name.clear();
+  dev_info.model_num.clear();
+  dev_info.serial_num.clear();
+  dev_info.options.clear();
   for (int i = 0; i < 16; ++i)
   {
     dev_info.model_name.append(1, resp_field->field_data[2 + i]);
@@ -897,7 +901,7 @@ bool LORDAHRSDriver::transmitMIPPktSynchronous(const LORDMIPPkt &pkt, std::vecto
   pkt.serialize(pkt_bytes);
 
   // Write the byte stream to serial
-  ssize_t bytes_written = 0;
+  size_t bytes_written = 0;
   const size_t pkt_byte_count = pkt_bytes.size();
 
   // Debugging
@@ -912,7 +916,7 @@ bool LORDAHRSDriver::transmitMIPPktSynchronous(const LORDMIPPkt &pkt, std::vecto
     const uint8_t *buf_ptr = pkt_bytes.data() + bytes_written;
     const ssize_t bytes_written_now = write(serial_fd, buf_ptr, bytes_to_write);
 
-    #ifdef PRINT_RX_BYTES
+    #ifdef PRINT_TX_BYTES
       printf("TX: ");
       for (int i = 0; i < bytes_written_now; ++i)
       {
@@ -927,8 +931,10 @@ bool LORDAHRSDriver::transmitMIPPktSynchronous(const LORDMIPPkt &pkt, std::vecto
     }
     bytes_written += bytes_written_now;
   }
-  //Debugging
-  printf("\n\n");
+  #ifdef PRINT_TX_BYTES
+    //Debugging
+    printf("\n\n");
+  #endif
 
   bool still_waiting_for_rx = true;
   std::chrono::time_point<std::chrono::steady_clock> timeout_time = std::chrono::steady_clock::now() +
@@ -936,7 +942,6 @@ bool LORDAHRSDriver::transmitMIPPktSynchronous(const LORDMIPPkt &pkt, std::vecto
 
   // Wait for the ACK/NACK response
   LORDMIPPkt resp_pkt(MIP_DESC_SET_INVALID);
-  const std::chrono::time_point<std::chrono::steady_clock> rx_start_time = std::chrono::steady_clock::now();
   while (true == still_waiting_for_rx)
   {
     const std::chrono::time_point<std::chrono::steady_clock> curr_time = std::chrono::steady_clock::now();
@@ -1266,9 +1271,9 @@ bool LORDAHRSDriver::parseDataPkts(const LORDMIPPkt &imu_pkt, const LORDMIPPkt &
   mergeAHRSData(imu_data, est_filt_data, data_out);
 
   // Debugging
-  imu_data.print();
-  est_filt_data.print();
-  data_out.print();
+  //imu_data.print();
+  //est_filt_data.print();
+  //data_out.print();
 
   return true;
 }
