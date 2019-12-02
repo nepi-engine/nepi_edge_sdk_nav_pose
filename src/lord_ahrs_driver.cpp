@@ -492,6 +492,7 @@ bool LORDAHRSDriver::updateSystemTime(uint32_t posix_time)
   update_week_field.pushBack(week_number);
   LORDMIPPkt update_gps_week_pkt(MIP_DESC_SET_BASE_CMD);
   update_gps_week_pkt.addField(update_week_field);
+  
   if (false == transmitMIPPktSynchronous(update_gps_week_pkt, nullptr))
   {
     return false;
@@ -510,6 +511,11 @@ bool LORDAHRSDriver::updateSystemTime(uint32_t posix_time)
 
 bool LORDAHRSDriver::updateReferencePosition(const LORDAHRSReferencePosition &pos)
 {
+  if (false == setIdleMode(true))
+  {
+    return false;
+  }
+
   LORDMIPField update_pos_field(LORD_MIP_FIELD_DESC_REF_POSITION);
   update_pos_field.pushBack(LORD_MIP_FIELD_FUNCTION_SELECTOR_APPLY_NEW);
   update_pos_field.pushBack(LORD_MIP_FIELD_GENERIC_ENABLE);
@@ -532,6 +538,8 @@ bool LORDAHRSDriver::updateReferencePosition(const LORDAHRSReferencePosition &po
   {
     world_mag_model_enabled = enableIncDecWorldMagModel(true);
   }
+
+  setIdleMode(false);
 
   return (pos_accepted && world_mag_model_enabled);
 }

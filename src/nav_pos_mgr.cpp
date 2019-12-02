@@ -22,8 +22,19 @@ NavPosMgr::NavPosMgr() :
 	ahrs_ready{false},
 	ahrs_rcv_thread{nullptr},
 	ahrs_rcv_continue{false},
-	ahrs_data_stack_max_size{1}
-{}
+	ahrs_data_stack_max_size{1},
+	update_ahrs_nav_sat_fix{false}
+{
+	latest_nav_sat_fix.header.seq = 0;
+	latest_nav_sat_fix.header.stamp = ros::Time(0.0);
+	latest_nav_sat_fix.header.frame_id = "vehicle_frame";
+	latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_NO_FIX;
+	latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
+	latest_nav_sat_fix.latitude = 0.0;
+	latest_nav_sat_fix.longitude = 0.0;
+	latest_nav_sat_fix.altitude = 0.0;
+	latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+}
 
 NavPosMgr::~NavPosMgr()
 {
@@ -68,6 +79,14 @@ void NavPosMgr::initServices()
 	servicers.push_back(n.advertiseService("nav_pos_status_query", &Numurus::NavPosMgr::provideNavPosStatus, this));
 }
 
+void NavPosMgr::initSubscribers()
+{
+	// Call the base method
+	SDKNode::initSubscribers();
+
+	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
+}
+
 bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
 {
 	const bool latestDataRequested = (0.0 == req.query_time.toSec())? true : false;
@@ -101,22 +120,14 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 	}
 
 	// Debugging
-	ahrs_data.print();
+	//ahrs_data.print();
 
 	// TODO: Simulated and non-simulated control. For now, just use the returned data
 	// (will be zero'd if we failed)
 	resp.nav_pos.timestamp = ros::Time(ahrs_data.timestamp);
 
 	// TODO: Gather a real fix if available
-	static uint32_t seq_cnt = 0;
-	resp.nav_pos.fix.header.seq = ++seq_cnt;
-	resp.nav_pos.fix.header.stamp = resp.nav_pos.timestamp;
-	resp.nav_pos.fix.header.frame_id = "0";
-	resp.nav_pos.fix.status.status = sensor_msgs::NavSatStatus::STATUS_FIX;
-	resp.nav_pos.fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
-	resp.nav_pos.fix.latitude = 0.0;
-	resp.nav_pos.fix.longitude = 0.0;
-	resp.nav_pos.fix.altitude = 0.0;
+	resp.nav_pos.fix = latest_nav_sat_fix;
 
 	// accel
 	resp.nav_pos.accel.linear.x = ahrs_data.accel_x;
@@ -151,13 +162,38 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 
 bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, num_sdk_msgs::NavPosStatusQuery::Response &resp)
 {
-	// TODO: Get real data. Simulate for now
-	resp.status.last_nav_sat_fix = ros::Time::now();
-	resp.status.nav_sat_fix_rate = (rand() % 2) + ((rand() % 1000) / 1000.0);
-	resp.status.last_imu = resp.status.last_nav_sat_fix;
-	resp.status.imu_rate = (rand() % 10) + ((rand() % 1000) / 1000.0);
+	resp.status.last_nav_sat_fix = latest_nav_sat_fix.header.stamp;
+	resp.status.nav_sat_fix_rate = 0.0; // TODO: Keep track of this in a member variable
+	resp.status.last_imu = ros::Time(0.0);
+	resp.status.imu_rate = 0.0;
+	{
+		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
+		if (ahrs_data_stack.size() > 0)
+		{
+			resp.status.last_imu = ros::Time(ahrs_data_stack[0].timestamp);
+		}
+		if (ahrs_data_stack.size() > 1)
+		{
+			// Just compute the latest two-point rate
+			resp.status.imu_rate = 1.0f / (ahrs_data_stack[0].timestamp - ahrs_data_stack[1].timestamp);
+		}
+	}
 
 	return true;
+}
+
+void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
+{
+	latest_nav_sat_fix = *msg;
+
+	// Update the AHRS -- this allows it to calculate a declination and provide a true
+	// north heading.
+	if (sensor_msgs::NavSatStatus::STATUS_NO_FIX != latest_nav_sat_fix.status.status)
+	{
+		// Must interact with the driver in a threadsafe way -- the service thread
+		// handles all calls into driver API, just signal it here
+		update_ahrs_nav_sat_fix = true; // atomic variable
+	}
 }
 
 void NavPosMgr::serviceAHRS()
@@ -171,6 +207,17 @@ void NavPosMgr::serviceAHRS()
 		// Query for the latest data
 		AHRSDataSet ahrs_data;
 		const bool got_data = ahrs.receiveLatestData(ahrs_data); // Blocks most of the time
+
+		if (true == update_ahrs_nav_sat_fix) // atomic variable
+		{
+			std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
+			LORDAHRSReferencePosition ref_pos;
+			ref_pos.latitude_deg = latest_nav_sat_fix.latitude;
+			ref_pos.longitude_deg = latest_nav_sat_fix.longitude;
+			ref_pos.altitude_m = latest_nav_sat_fix.altitude;
+			ahrs.updateReferencePosition(ref_pos);
+			update_ahrs_nav_sat_fix = false;
+		}
 
 		// Send time updates at intervals -- do this quickly after receiveLatestData()
 		// to help ensure an empty rcv buffer... that's easier on everybody

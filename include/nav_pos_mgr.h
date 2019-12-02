@@ -6,6 +6,8 @@
 #include <mutex>
 #include <deque>
 
+#include "sensor_msgs/NavSatFix.h"
+
 #include "sdk_node.h"
 #include "lord_ahrs_driver.h"
 #include "num_sdk_msgs/NavPosQuery.h"
@@ -24,6 +26,7 @@ public:
 	// Inherited from SDKNode
 	void init() override;
 	void initServices() override;
+	void initSubscribers() override;
 
 private:
 	NodeParam<std::string> ahrs_comm_device;
@@ -37,12 +40,15 @@ private:
 	std::deque<AHRSDataSet> ahrs_data_stack;
 	std::mutex ahrs_data_stack_mutex;
 	size_t ahrs_data_stack_max_size;
-
 	// TODO: How should we specialize this class for other AHRS drivers
 	// (e.g., raw IMU driver)? Subclass it? Conditional compilation? Config variable
 	// (pushing the instantiation out to the init method after config variables are
 	// loaded)?
 	LORDAHRSDriver ahrs;
+
+	std::atomic<bool> update_ahrs_nav_sat_fix;
+	std::mutex latest_nav_sat_fix_mutex;
+	sensor_msgs::NavSatFix latest_nav_sat_fix;
 
 	/**
 	 * @brief      Provide the (interpolated) NavPos response for the requested timestamp
@@ -67,6 +73,8 @@ private:
 	 * @return     true if successful, false otherwise
 	 */
 	bool provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request &req, num_sdk_msgs::NavPosStatusQuery::Response &resp);
+
+	void setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
 
 	void serviceAHRS();
 
