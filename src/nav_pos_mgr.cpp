@@ -109,7 +109,7 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
 		if (ahrs_data_stack.size() > 0)
 		{
-			// TODO: Respected the requested data timestamp via zero-order hold, linear interpolation, etc.
+			// TODO: Respect the requested data timestamp via zero-order hold, linear interpolation, etc.
 			// instead of just providing latest data via [0] index.
 			ahrs_data = ahrs_data_stack[0];
 		}
@@ -126,8 +126,12 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 	// (will be zero'd if we failed)
 	resp.nav_pos.timestamp = ros::Time(ahrs_data.timestamp);
 
-	// TODO: Gather a real fix if available
-	resp.nav_pos.fix = latest_nav_sat_fix;
+	// Copy in the latest position fix -- under mutex protection since this could be
+	// read by the driver thread concurrently.
+	{
+		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
+		resp.nav_pos.fix = latest_nav_sat_fix;
+	}
 
 	// accel
 	resp.nav_pos.accel.linear.x = ahrs_data.accel_x;
@@ -162,7 +166,10 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 
 bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, num_sdk_msgs::NavPosStatusQuery::Response &resp)
 {
-	resp.status.last_nav_sat_fix = latest_nav_sat_fix.header.stamp;
+	{
+		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
+		resp.status.last_nav_sat_fix = latest_nav_sat_fix.header.stamp;
+	}
 	resp.status.nav_sat_fix_rate = 0.0; // TODO: Keep track of this in a member variable
 	resp.status.last_imu = ros::Time(0.0);
 	resp.status.imu_rate = 0.0;
