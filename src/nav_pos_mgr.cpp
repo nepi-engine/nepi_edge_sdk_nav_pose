@@ -97,7 +97,7 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 		const ros::Duration elapsed = now - req.query_time;
 		if (elapsed.toSec() > MAX_NAV_POS_QUERY_DELAY)
 		{
-			ROS_ERROR("%s: Requested nav/pos time (%.3f) is more than %.3f seconds ago... cannot retrieve data", getName().c_str(),
+			ROS_ERROR("%s: Requested nav/pos time (%.3f) is more than %.3f seconds ago... cannot retrieve data", getUnqualifiedName().c_str(),
 					  req.query_time.toSec(), MAX_NAV_POS_QUERY_DELAY);
 			return false;
 		}
