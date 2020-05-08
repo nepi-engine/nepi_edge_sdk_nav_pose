@@ -307,7 +307,7 @@ LORDAHRSDriver::~LORDAHRSDriver()
 }
 
 bool LORDAHRSDriver::init(const char* serial_dev, float data_rate_hz, uint32_t current_time_posix,
-                          const LORDAHRSRollPitchYaw &sensor_to_vehicle)
+                          const AHRSRollPitchYaw &sensor_to_vehicle)
 {
   initialized = false;
 
@@ -492,7 +492,7 @@ bool LORDAHRSDriver::updateSystemTime(uint32_t posix_time)
   update_week_field.pushBack(week_number);
   LORDMIPPkt update_gps_week_pkt(MIP_DESC_SET_BASE_CMD);
   update_gps_week_pkt.addField(update_week_field);
-  
+
   if (false == transmitMIPPktSynchronous(update_gps_week_pkt, nullptr))
   {
     return false;
@@ -509,7 +509,7 @@ bool LORDAHRSDriver::updateSystemTime(uint32_t posix_time)
   return transmitMIPPktSynchronous(update_gps_seconds_pkt, nullptr);
 }
 
-bool LORDAHRSDriver::updateReferencePosition(const LORDAHRSReferencePosition &pos)
+bool LORDAHRSDriver::updateReferencePosition(const AHRSReferencePosition &pos)
 {
   if (false == setIdleMode(true))
   {
@@ -818,7 +818,7 @@ bool LORDAHRSDriver::initializeHeadingUpdateSource()
   return transmitMIPPktSynchronous(heading_update_ctl_pkt, nullptr);
 }
 
-bool LORDAHRSDriver::initializeSensorToVehicleTransform(const LORDAHRSRollPitchYaw &transform)
+bool LORDAHRSDriver::initializeSensorToVehicleTransform(const AHRSRollPitchYaw &transform)
 {
   LORDMIPField sensor_vehicle_transform_field(LORD_MIP_FIELD_DESC_SENSOR_VEHICLE_TRANSFORM);
   sensor_vehicle_transform_field.pushBack(LORD_MIP_FIELD_FUNCTION_SELECTOR_APPLY_NEW);

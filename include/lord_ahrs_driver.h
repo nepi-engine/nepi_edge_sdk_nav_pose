@@ -538,32 +538,6 @@ struct LORDAHRSEstFiltData
   }
 };
 
-struct LORDAHRSRollPitchYaw
-{
-  float roll_rad = 0.0f;
-  float pitch_rad = 0.0f;
-  float yaw_rad = 0.0f;
-
-  LORDAHRSRollPitchYaw() :
-    roll_rad{0.0f},
-    pitch_rad{0.0f},
-    yaw_rad{0.0f}
-  {}
-
-  LORDAHRSRollPitchYaw(float r, float p, float y) :
-    roll_rad{r},
-    pitch_rad{r},
-    yaw_rad{r}
-  {}
-};
-
-struct LORDAHRSReferencePosition
-{
-  double latitude_deg = 0.0;
-  double longitude_deg = 0.0;
-  double altitude_m = 0.0;
-};
-
 class LORDAHRSDriver : public AHRSDriver
 {
 public:
@@ -571,10 +545,10 @@ public:
   ~LORDAHRSDriver();
 
   bool init(const char* serial_dev, float data_rate_hz, uint32_t current_time_posix,
-            const LORDAHRSRollPitchYaw &sensor_to_vehicle);
+            const AHRSRollPitchYaw &sensor_to_vehicle) override;
   bool receiveLatestData(AHRSDataSet &data_out) override;
-  bool updateSystemTime(uint32_t posix_time);
-  bool updateReferencePosition(const LORDAHRSReferencePosition &pos);
+  bool updateSystemTime(uint32_t posix_time) override;
+  bool updateReferencePosition(const AHRSReferencePosition &pos) override;
   bool magnetometerCaptureAutoCal();
   bool updateDataStreamRate(float data_rate_hz);
 
@@ -599,7 +573,7 @@ private:
     bool initializeIMUDataStreamFormat(uint16_t imu_rate_decimation);
     bool initializeEstFilterDataStreamFormat(uint16_t est_filter_rate_decimation);
     bool initializeHeadingUpdateSource();
-    bool initializeSensorToVehicleTransform(const LORDAHRSRollPitchYaw &transform);
+    bool initializeSensorToVehicleTransform(const AHRSRollPitchYaw &transform);
     bool setEstFilterControlFlags();
     bool enableGravityVectorAiding();
     bool enableConfiguredDataStreams();

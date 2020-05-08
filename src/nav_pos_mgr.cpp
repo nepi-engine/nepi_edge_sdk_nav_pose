@@ -3,10 +3,14 @@
 
 #include "nav_pos_mgr.h"
 #include "lord_ahrs_driver.h"
+#include "zed_ahrs_driver.h"
 
 #define NODE_NAME	"nav_pos_mgr"
 
 #define MAX_NAV_POS_QUERY_DELAY	5.0 // TODO: Make this a configurable parameter?
+
+#define AHRS_TYPE_LORD "lord"
+#define AHRS_TYPE_ZED "zed"
 
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
 
@@ -14,11 +18,12 @@ namespace Numurus
 {
 
 NavPosMgr::NavPosMgr() :
-	ahrs_comm_device{"ahrs_comm_device", "/dev/ttyUSB0", this},
+	ahrs_comm_device{"ahrs_comm_device", "", this}, // e.g., /dev/ttyUSB0 for LORD via USB
 	ahrs_update_rate_hz{"ahrs_update_rate_hz", 10.0f, this},
 	ahrs_roll_offset_deg{"ahrs_roll_offset_deg", 0.0f, this},
 	ahrs_pitch_offset_deg{"ahrs_pitch_offset_deg", 0.0f, this},
 	ahrs_yaw_offset_deg{"ahrs_yaw_offset_deg", 0.0f, this},
+	ahrs_type{"ahrs_type", AHRS_TYPE_ZED, this}, // Better default?
 	ahrs_ready{false},
 	ahrs_rcv_thread{nullptr},
 	ahrs_rcv_continue{false},
@@ -42,6 +47,10 @@ NavPosMgr::~NavPosMgr()
 	{
 		delete ahrs_rcv_thread;
 	}
+	if (nullptr != ahrs)
+	{
+		delete ahrs;
+	}
 }
 
 void NavPosMgr::init()
@@ -49,24 +58,39 @@ void NavPosMgr::init()
 	SDKNode::init(); // call the base class method first
 
 	// Now the config variables are populated
-	const LORDAHRSRollPitchYaw rpy_rad(DEG_TO_RAD(ahrs_roll_offset_deg),
-																		 DEG_TO_RAD(ahrs_pitch_offset_deg),
-																	 	 DEG_TO_RAD(ahrs_yaw_offset_deg));
-	const std::time_t now_s = std::time(0);
-	std::string ahrs_comm_device_name = ahrs_comm_device;
-	ahrs_ready = ahrs.init(ahrs_comm_device_name.c_str(), ahrs_update_rate_hz, now_s,
-            						 rpy_rad);
-	if (false == ahrs_ready)
+	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
+	if (type == AHRS_TYPE_LORD)
 	{
-		ROS_ERROR("Unable to initialize AHRS device driver");
+		ahrs = new LORDAHRSDriver();
+	}
+	else if (type == AHRS_TYPE_ZED)
+	{
+		ahrs = new ZedAHRSDriver(n, n_priv);
 	}
 	else
 	{
-		// Launch the AHRS receive thread
-		ahrs_rcv_continue = true;
-		ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
-		ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
+		ROS_FATAL("%s: Critical failure: Invalid AHRS type %s\n", getUnqualifiedName().c_str(), type.c_str());
+		return;
 	}
+
+	// Initialize the AHRS
+	const AHRSRollPitchYaw rpy_rad(DEG_TO_RAD(ahrs_roll_offset_deg),
+																 DEG_TO_RAD(ahrs_pitch_offset_deg),
+															 	 DEG_TO_RAD(ahrs_yaw_offset_deg));
+	const std::time_t now_s = std::time(0);
+	std::string ahrs_comm_device_name = ahrs_comm_device; // Must assign to get the cast overload on SDKNodeParam to kick in.
+	ahrs_ready = ahrs->init(ahrs_comm_device_name.c_str(), ahrs_update_rate_hz, now_s,
+	            						 rpy_rad);
+	if (false == ahrs_ready)
+	{
+		ROS_ERROR("Unable to initialize AHRS (%s:%s) device driver\n", type.c_str(), ahrs_comm_device_name.c_str());
+		return;
+	}
+
+	// Launch the AHRS receive thread
+	ahrs_rcv_continue = true;
+	ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
+	ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
 }
 
 void NavPosMgr::initServices()
@@ -107,6 +131,7 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 	AHRSDataSet ahrs_data;
 	{
 		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
+		//ROS_INFO("Debug: Servicing nav_pos request from %lu in the stack\n", ahrs_data_stack.size());
 		if (ahrs_data_stack.size() > 0)
 		{
 			// TODO: Respect the requested data timestamp via zero-order hold, linear interpolation, etc.
@@ -115,6 +140,7 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 		}
 		else
 		{
+			// Just silently fail -- this would be the norm if there was no AHRS attached.
 			return false;
 		}
 	}
@@ -142,9 +168,9 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 	resp.nav_pos.accel.angular.z = 0.0;
 
 	// linear velocity
-	resp.nav_pos.linear_velocity.x = 0.0;
-	resp.nav_pos.linear_velocity.y = 0.0;
-	resp.nav_pos.linear_velocity.z = 0.0;
+	resp.nav_pos.linear_velocity.x = ahrs_data.velocity_x;
+	resp.nav_pos.linear_velocity.y = ahrs_data.velocity_y;
+	resp.nav_pos.linear_velocity.z = ahrs_data.velocity_z;
 
 	// angular velocity
 	resp.nav_pos.angular_velocity.x = ahrs_data.angular_velocity_x;
@@ -213,16 +239,17 @@ void NavPosMgr::serviceAHRS()
 	{
 		// Query for the latest data
 		AHRSDataSet ahrs_data;
-		const bool got_data = ahrs.receiveLatestData(ahrs_data); // Blocks most of the time
+		const bool got_data = ahrs->receiveLatestData(ahrs_data); // Blocks most of the time
 
 		if (true == update_ahrs_nav_sat_fix) // atomic variable
 		{
 			std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-			LORDAHRSReferencePosition ref_pos;
+			AHRSReferencePosition ref_pos;
 			ref_pos.latitude_deg = latest_nav_sat_fix.latitude;
 			ref_pos.longitude_deg = latest_nav_sat_fix.longitude;
 			ref_pos.altitude_m = latest_nav_sat_fix.altitude;
-			ahrs.updateReferencePosition(ref_pos);
+			ahrs->updateReferencePosition(ref_pos);
+
 			update_ahrs_nav_sat_fix = false;
 		}
 
@@ -231,7 +258,7 @@ void NavPosMgr::serviceAHRS()
 		const ros::Time now = ros::Time::now();
 		if (now - last_update_time >= TIME_UPDATE_INTERVAL)
 		{
-			if (true == ahrs.updateSystemTime(now.sec))
+			if (true == ahrs->updateSystemTime(now.sec))
 			{
 				last_update_time = now;
 			}
@@ -259,8 +286,8 @@ bool NavPosMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
 	if ((AHRS_FILTER_STAT_RUN_VAL != ahrs_data.filter_state) ||
 			(false == ahrs_data.accel_valid) ||
 			(false == ahrs_data.angular_velocity_valid) ||
-			(false == ahrs_data.orientation_valid) ||
-			(false == ahrs_data.heading_valid))
+			(false == ahrs_data.orientation_valid))
+			//|| (false == ahrs_data.heading_valid))
 	{
 		return false;
 	}

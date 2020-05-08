@@ -121,10 +121,12 @@ include_directories(
 ## either from message generation or dynamic reconfigure
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+## TODO: We should probably break out the drivers into a separate library
 ## Nav/Pos Mgr Node
 add_executable(nav_pos_mgr_node
   src/ahrs_driver.cpp
   src/lord_ahrs_driver.cpp
+  src/zed_ahrs_driver.cpp
   src/nav_pos_mgr.cpp
 )
 

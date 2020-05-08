@@ -9,13 +9,15 @@
 #include "sensor_msgs/NavSatFix.h"
 
 #include "sdk_node.h"
-#include "lord_ahrs_driver.h"
+//#include "lord_ahrs_driver.h"
+#include "ahrs_driver.h"
 #include "num_sdk_msgs/NavPosQuery.h"
 #include "num_sdk_msgs/NavPosStatusQuery.h"
 
 namespace Numurus
 {
-class LORDAHRSDriver; // forward declaration;
+//class LORDAHRSDriver; // forward declaration;
+class AHRSDriver;
 
 class NavPosMgr : public SDKNode
 {
@@ -34,17 +36,15 @@ private:
 	NodeParam<float> ahrs_roll_offset_deg;
 	NodeParam<float> ahrs_pitch_offset_deg;
 	NodeParam<float> ahrs_yaw_offset_deg;
+	NodeParam<std::string> ahrs_type;
 	bool ahrs_ready;
 	std::thread *ahrs_rcv_thread;
 	std::atomic<bool> ahrs_rcv_continue;
 	std::deque<AHRSDataSet> ahrs_data_stack;
 	std::mutex ahrs_data_stack_mutex;
 	size_t ahrs_data_stack_max_size;
-	// TODO: How should we specialize this class for other AHRS drivers
-	// (e.g., raw IMU driver)? Subclass it? Conditional compilation? Config variable
-	// (pushing the instantiation out to the init method after config variables are
-	// loaded)?
-	LORDAHRSDriver ahrs;
+
+	AHRSDriver *ahrs = nullptr;
 
 	std::atomic<bool> update_ahrs_nav_sat_fix;
 	std::mutex latest_nav_sat_fix_mutex;

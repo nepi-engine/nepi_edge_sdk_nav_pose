@@ -6,6 +6,31 @@
 
 namespace Numurus
 {
+struct AHRSRollPitchYaw
+{
+  float roll_rad = 0.0f;
+  float pitch_rad = 0.0f;
+  float yaw_rad = 0.0f;
+
+  AHRSRollPitchYaw() :
+    roll_rad{0.0f},
+    pitch_rad{0.0f},
+    yaw_rad{0.0f}
+  {}
+
+  AHRSRollPitchYaw(float r, float p, float y) :
+    roll_rad{r},
+    pitch_rad{r},
+    yaw_rad{r}
+  {}
+};
+
+struct AHRSReferencePosition
+{
+  double latitude_deg = 0.0;
+  double longitude_deg = 0.0;
+  double altitude_m = 0.0;
+};
 
 enum AHRSFilterStatus
 {
@@ -81,6 +106,13 @@ public:
   AHRSDriver();
   virtual ~AHRSDriver();
 
+  // Subclasses may implement
+  virtual inline bool init(const char* hardware_id, float data_rate_hz, uint32_t current_time_posix,
+                           const AHRSRollPitchYaw &sensor_to_vehicle) {return true;}
+  virtual inline bool updateSystemTime(uint32_t posix_time){return true;}
+  virtual inline bool updateReferencePosition(const AHRSReferencePosition &pos){return true;}
+
+   // Subclasses MUST implement
   virtual bool receiveLatestData(AHRSDataSet &data_out) = 0;
 }; // class AHRSDriver
 
