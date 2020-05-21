@@ -235,7 +235,7 @@ void NavPosMgr::serviceAHRS()
 	const ros::Duration TIME_UPDATE_INTERVAL(1.0); // 1Hz
 	ros::Time last_update_time = ros::Time::now();
 
-	while(true == ahrs_rcv_continue)
+	while((true == ahrs_rcv_continue && true == ros::ok()))
 	{
 		// Query for the latest data
 		AHRSDataSet ahrs_data;
