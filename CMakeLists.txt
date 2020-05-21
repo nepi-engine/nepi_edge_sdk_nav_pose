@@ -155,10 +155,6 @@ catkin_install_python(PROGRAMS
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-catkin_install_python(PROGRAMS
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
 ## Mark executables and/or libraries for installation
 install(TARGETS
   nav_pos_mgr_node
@@ -187,6 +183,12 @@ install(DIRECTORY include/
 #   # myfile2
 #   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
+
+# Install etc files (startup scripts, factory configs, etc.) to the global (not project) etc destination
+install(DIRECTORY etc/
+  DESTINATION ${CATKIN_GLOBAL_ETC_DESTINATION}
+  USE_SOURCE_PERMISSIONS
+)
 
 #############
 ## Testing ##
