@@ -81,11 +81,16 @@ private:
 
 	void setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
 
+	void setIMUTopic(const std_msgs::String::ConstPtr &msg);
+	void setOdomTopic(const std_msgs::String::ConstPtr &msg);
+
 	void serviceAHRS();
 
 	static bool validateAHRSData(const AHRSDataSet &ahrs_data);
 
 	void saveDataIfNecessary(const AHRSDataSet &ahrs_data);
+
+	void ensureAHRSTypeROS();
 
 }; // class NavPosTimeMgr
 } // namespace Numurus

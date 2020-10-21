@@ -142,10 +142,8 @@ void NavPosMgr::initSubscribers()
 
 	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
 
-	if (nullptr != save_data_if)
-	{
-		save_data_if->initSubscribers();
-	}
+	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPosMgr::setIMUTopic, this));
+	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPosMgr::setOdomTopic, this));
 }
 
 bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
@@ -264,6 +262,45 @@ void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 		// handles all calls into driver API, just signal it here
 		update_ahrs_nav_sat_fix = true; // atomic variable
 	}
+}
+
+void NavPosMgr::ensureAHRSTypeROS()
+{
+	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
+	if (type != AHRS_TYPE_ROS)
+	{
+		ROS_WARN("Changing AHRS type to ROS... No nav/pos data until both IMU and Odom topics are set");
+		if (nullptr != ahrs)
+		{
+			delete ahrs;
+		}
+		ahrs = new ROSAHRSDriver(n);
+		ahrs_type = AHRS_TYPE_ROS;
+	}
+	else if (nullptr == ahrs)
+	{
+		ahrs = new ROSAHRSDriver(n);
+	}
+}
+
+void NavPosMgr::setIMUTopic(const std_msgs::String::ConstPtr &msg)
+{
+	{
+		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
+		ensureAHRSTypeROS();
+		dynamic_cast<ROSAHRSDriver*>(ahrs)->setIMUSubscription(n, msg->data);
+	}
+	imu_topic = msg->data;
+}
+
+void NavPosMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
+{
+	{
+		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
+		ensureAHRSTypeROS();
+		dynamic_cast<ROSAHRSDriver*>(ahrs)->setOdomSubscription(n, msg->data);
+	}
+	odom_topic = msg->data;
 }
 
 void NavPosMgr::serviceAHRS()

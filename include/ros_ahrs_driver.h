@@ -18,14 +18,18 @@ namespace Numurus
 class ROSAHRSDriver : public AHRSDriver
 {
 public:
-  ROSAHRSDriver(ros::NodeHandle parent_pub_nh, const std::string &imu_topic, const std::string &odom_topic); // Default constructor
+  ROSAHRSDriver(ros::NodeHandle parent_pub_nh, const std::string &imu_topic = NO_TOPIC, const std::string &odom_topic = NO_TOPIC); // Default constructor
   virtual ~ROSAHRSDriver(); // Destructor
 
   // Implement the abstract AHRSDriver interface
   bool receiveLatestData(AHRSDataSet &data_out) override;
 
+  void setIMUSubscription(ros::NodeHandle parent_pub_nh, const std::string &imu_topic);
+  void setOdomSubscription(ros::NodeHandle parent_pub_nh, const std::string &odom_topic);
+
 private:
   const int NAV_POS_SYNC_QUEUE_SIZE = 50;
+  const static std::string NO_TOPIC;
 
   std::mutex ahrs_data_mutex; // NAV PosMgr accesses this from its dedicated service thread
   AHRSDataSet latest_ahrs;
@@ -37,6 +41,7 @@ private:
   message_filters::Synchronizer<ApproxNavPosSyncPolicy>* approx_nav_pos_sync = nullptr;
 
   void callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, const nav_msgs::OdometryConstPtr& odom_msg);
+
 };
 
 } // namespace Numurus

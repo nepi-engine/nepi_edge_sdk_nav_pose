@@ -2,12 +2,13 @@
 
 namespace Numurus
 {
+const std::string ROSAHRSDriver::NO_TOPIC = "None";
 
 ROSAHRSDriver::ROSAHRSDriver(ros::NodeHandle parent_pub_nh, const std::string &imu_topic, const std::string &odom_topic)
 {
   // Set up the message_filter subscribers
-  imu_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + imu_topic, 1);
-  odom_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + odom_topic, 1);
+  setIMUSubscription(parent_pub_nh, imu_topic);
+  setOdomSubscription(parent_pub_nh, odom_topic);
 
   approx_nav_pos_sync = new message_filters::Synchronizer<ApproxNavPosSyncPolicy>(ApproxNavPosSyncPolicy(NAV_POS_SYNC_QUEUE_SIZE),
                                                                                   imu_sub, odom_sub);
@@ -82,6 +83,22 @@ void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, 
   latest_ahrs.heading = 0.0f;
   latest_ahrs.heading_true_north = false;
   latest_ahrs.heading_valid = false;
+}
+
+void ROSAHRSDriver::setIMUSubscription(ros::NodeHandle parent_pub_nh, const std::string &imu_topic)
+{
+  if (imu_topic != NO_TOPIC)
+  {
+    imu_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + imu_topic, 1);
+  }
+}
+
+void ROSAHRSDriver::setOdomSubscription(ros::NodeHandle parent_pub_nh, const std::string &odom_topic)
+{
+  if (odom_topic != NO_TOPIC)
+  {
+    odom_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + odom_topic, 1);
+  }
 }
 
 } // namespace Numurus
