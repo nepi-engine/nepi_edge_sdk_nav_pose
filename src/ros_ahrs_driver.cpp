@@ -1,29 +1,25 @@
-#include <zed_ahrs_driver.h>
+#include <ros_ahrs_driver.h>
 
 namespace Numurus
 {
 
-
-ZedAHRSDriver::ZedAHRSDriver(ros::NodeHandle parent_pub_nh, ros::NodeHandle parent_priv_nh)
+ROSAHRSDriver::ROSAHRSDriver(ros::NodeHandle parent_pub_nh, const std::string &imu_topic, const std::string &odom_topic)
 {
-  ros::NodeHandle zed_nh(parent_pub_nh, ZED_NODELET_NAME);
-  ros::NodeHandle imu_nh(zed_nh, "imu");
-
   // Set up the message_filter subscribers
-  imu_sub.subscribe(imu_nh, "data", 1);
-  odom_sub.subscribe(zed_nh, "odom", 1);
+  imu_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + imu_topic, 1);
+  odom_sub.subscribe(parent_pub_nh, ros::this_node::getNamespace() + '/' + odom_topic, 1);
 
   approx_nav_pos_sync = new message_filters::Synchronizer<ApproxNavPosSyncPolicy>(ApproxNavPosSyncPolicy(NAV_POS_SYNC_QUEUE_SIZE),
                                                                                   imu_sub, odom_sub);
-  approx_nav_pos_sync->registerCallback(boost::bind(&ZedAHRSDriver::callbackIMUAndOdom, this, _1, _2));
+  approx_nav_pos_sync->registerCallback(boost::bind(&ROSAHRSDriver::callbackIMUAndOdom, this, _1, _2));
 }
 
-ZedAHRSDriver::~ZedAHRSDriver()
+ROSAHRSDriver::~ROSAHRSDriver()
 {
   if (nullptr != approx_nav_pos_sync) delete approx_nav_pos_sync;
 }
 
-bool ZedAHRSDriver::receiveLatestData(AHRSDataSet &data_out)
+bool ROSAHRSDriver::receiveLatestData(AHRSDataSet &data_out)
 {
   // Simply copy (under mutex lock because this is called from a separate thread)
   {
@@ -34,7 +30,7 @@ bool ZedAHRSDriver::receiveLatestData(AHRSDataSet &data_out)
   return true;
 }
 
-void ZedAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, const nav_msgs::OdometryConstPtr& odom_msg)
+void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, const nav_msgs::OdometryConstPtr& odom_msg)
 {
   //ROS_INFO("Debugging: Got IMU and Odometry");
   // We apply a fixed transform here based on observation (odom and imu frames appear to be aligned)
@@ -44,7 +40,7 @@ void ZedAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, 
   // Fill out the latest_ahrs according to this combination
   latest_ahrs.timestamp = odom_msg->header.stamp.toSec(); // Odometry is the slower rate topic, so use its timestamp
   latest_ahrs.filter_state = AHRS_FILTER_STAT_RUN_VAL; // Always mark it as running, since we're receiving data
-  //latest_ahrs.filter_flags = 0; // Unused in the ZedAHRSDriver
+  //latest_ahrs.filter_flags = 0; // Unused in the ROSAHRSDriver
 
   // Linear Accelerations (m/s^2), frame transformation applied
   latest_ahrs.accel_x = imu_msg->linear_acceleration.x;

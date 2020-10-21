@@ -15,18 +15,17 @@
 namespace Numurus
 {
 
-class ZedAHRSDriver : public AHRSDriver
+class ROSAHRSDriver : public AHRSDriver
 {
 public:
-  ZedAHRSDriver(ros::NodeHandle parent_pub_nh, ros::NodeHandle parent_priv_nh); // Default constructor
-  virtual ~ZedAHRSDriver(); // Destructor
+  ROSAHRSDriver(ros::NodeHandle parent_pub_nh, const std::string &imu_topic, const std::string &odom_topic); // Default constructor
+  virtual ~ROSAHRSDriver(); // Destructor
 
   // Implement the abstract AHRSDriver interface
   bool receiveLatestData(AHRSDataSet &data_out) override;
 
 private:
   const int NAV_POS_SYNC_QUEUE_SIZE = 50;
-  const std::string ZED_NODELET_NAME = "3dx_device/stereo_cam_driver";
 
   std::mutex ahrs_data_mutex; // NAV PosMgr accesses this from its dedicated service thread
   AHRSDataSet latest_ahrs;

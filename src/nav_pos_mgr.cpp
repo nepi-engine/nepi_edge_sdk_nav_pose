@@ -7,7 +7,7 @@
 
 #include "nav_pos_mgr.h"
 #include "lord_ahrs_driver.h"
-#include "zed_ahrs_driver.h"
+#include "ros_ahrs_driver.h"
 #include "save_data_interface.h"
 
 #define NODE_NAME	"nav_pos_mgr"
@@ -15,7 +15,7 @@
 #define MAX_NAV_POS_QUERY_DELAY	5.0 // TODO: Make this a configurable parameter?
 
 #define AHRS_TYPE_LORD "lord"
-#define AHRS_TYPE_ZED "zed"
+#define AHRS_TYPE_ROS "ros"
 
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
 
@@ -46,7 +46,9 @@ NavPosMgr::NavPosMgr() :
 	ahrs_roll_offset_deg{"ahrs_roll_offset_deg", 0.0f, this},
 	ahrs_pitch_offset_deg{"ahrs_pitch_offset_deg", 0.0f, this},
 	ahrs_yaw_offset_deg{"ahrs_yaw_offset_deg", 0.0f, this},
-	ahrs_type{"ahrs_type", AHRS_TYPE_ZED, this}, // Better default?
+	ahrs_type{"ahrs_type", AHRS_TYPE_ROS, this}, // Better default?
+	imu_topic{"imu_topic", "3dx_device/stereo_cam_driver/imu/data", this}, // Better default?
+	odom_topic{"odom_topic", "3dx_device/stereo_cam_driver/odom", this}, // Better default?
 	ahrs_ready{false},
 	ahrs_rcv_thread{nullptr},
 	ahrs_rcv_continue{false},
@@ -93,9 +95,9 @@ void NavPosMgr::init()
 	{
 		ahrs = new LORDAHRSDriver();
 	}
-	else if (type == AHRS_TYPE_ZED)
+	else if (type == AHRS_TYPE_ROS)
 	{
-		ahrs = new ZedAHRSDriver(n, n_priv);
+		ahrs = new ROSAHRSDriver(n, imu_topic, odom_topic);
 	}
 	else
 	{
@@ -121,12 +123,6 @@ void NavPosMgr::init()
 	ahrs_rcv_continue = true;
 	ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
 	ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
-
-	// Get the parameters for the save_data_if
-	if (nullptr != save_data_if)
-	{
-		save_data_if->retrieveParams();
-	}
 }
 
 void NavPosMgr::initServices()

@@ -38,6 +38,8 @@ private:
 	NodeParam<float> ahrs_pitch_offset_deg;
 	NodeParam<float> ahrs_yaw_offset_deg;
 	NodeParam<std::string> ahrs_type;
+	NodeParam<std::string> imu_topic;
+	NodeParam<std::string> odom_topic;
 	bool ahrs_ready;
 	std::thread *ahrs_rcv_thread;
 	std::atomic<bool> ahrs_rcv_continue;

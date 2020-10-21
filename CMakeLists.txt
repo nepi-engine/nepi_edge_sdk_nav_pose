@@ -126,7 +126,7 @@ include_directories(
 add_executable(nav_pos_mgr_node
   src/ahrs_driver.cpp
   src/lord_ahrs_driver.cpp
-  src/zed_ahrs_driver.cpp
+  src/ros_ahrs_driver.cpp
   src/nav_pos_mgr.cpp
 )
 
