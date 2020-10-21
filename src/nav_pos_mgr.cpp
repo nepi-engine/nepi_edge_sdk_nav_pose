@@ -1,9 +1,14 @@
 #include <cstdlib>
 #include <cmath>
 
+#include <sys/stat.h>
+
+#include "boost/date_time/posix_time/posix_time.hpp"
+
 #include "nav_pos_mgr.h"
 #include "lord_ahrs_driver.h"
 #include "zed_ahrs_driver.h"
+#include "save_data_interface.h"
 
 #define NODE_NAME	"nav_pos_mgr"
 
@@ -16,6 +21,24 @@
 
 namespace Numurus
 {
+
+static inline const char* navSatStatusToString(int8_t status)
+{
+	if (status == sensor_msgs::NavSatStatus::STATUS_NO_FIX) return "NO FIX";
+	if (status == sensor_msgs::NavSatStatus::STATUS_FIX) return "FIX";
+	if (status == sensor_msgs::NavSatStatus::STATUS_SBAS_FIX) return "SBAS FIX";
+	if (status == sensor_msgs::NavSatStatus::STATUS_GBAS_FIX) return "GBAS FIX";
+	return "UNKNOWN";
+}
+
+static inline const char* navSatServiceToString(int8_t service)
+{
+	if (service == sensor_msgs::NavSatStatus::SERVICE_GPS) return "GPS";
+	if (service == sensor_msgs::NavSatStatus::SERVICE_GLONASS) return "GLONASS";
+	if (service == sensor_msgs::NavSatStatus::SERVICE_COMPASS) return "COMPASS";
+	if (service == sensor_msgs::NavSatStatus::SERVICE_GALILEO) return "GALILEO";
+	return "UNKNOWN";
+}
 
 NavPosMgr::NavPosMgr() :
 	ahrs_comm_device{"ahrs_comm_device", "", this}, // e.g., /dev/ttyUSB0 for LORD via USB
@@ -39,6 +62,9 @@ NavPosMgr::NavPosMgr() :
 	latest_nav_sat_fix.longitude = 0.0;
 	latest_nav_sat_fix.altitude = 0.0;
 	latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+
+	save_data_if = new SaveDataInterface(this, &n, &n_priv);
+	save_data_if->registerDataProduct("nav_pos");
 }
 
 NavPosMgr::~NavPosMgr()
@@ -50,6 +76,10 @@ NavPosMgr::~NavPosMgr()
 	if (nullptr != ahrs)
 	{
 		delete ahrs;
+	}
+	if (nullptr != save_data_if)
+	{
+		delete save_data_if;
 	}
 }
 
@@ -91,6 +121,12 @@ void NavPosMgr::init()
 	ahrs_rcv_continue = true;
 	ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
 	ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
+
+	// Get the parameters for the save_data_if
+	if (nullptr != save_data_if)
+	{
+		save_data_if->retrieveParams();
+	}
 }
 
 void NavPosMgr::initServices()
@@ -109,6 +145,11 @@ void NavPosMgr::initSubscribers()
 	SDKNode::initSubscribers();
 
 	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
+
+	if (nullptr != save_data_if)
+	{
+		save_data_if->initSubscribers();
+	}
 }
 
 bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
@@ -275,6 +316,9 @@ void NavPosMgr::serviceAHRS()
 				ahrs_data_stack.pop_back();
 			}
 			ahrs_data_stack.push_front(ahrs_data);
+
+			// And save the data to disk if necessary
+			saveDataIfNecessary(ahrs_data);
 		}
 	}
 
@@ -292,6 +336,49 @@ bool NavPosMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
 		return false;
 	}
 	return true;
+}
+
+void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
+{
+	const bool needs_save = save_data_if->saveContinuousEnabled() && save_data_if->dataProductShouldSave("nav_pos");
+	if (false == needs_save)
+	{
+		return;
+	}
+
+	// Build the filename
+	const std::string display_name = _display_name;
+	// Easiest way to convert double to iso timestamp is with boost via ROS
+	ros::Time ros_tstamp(ahrs_data.timestamp);
+	boost::posix_time::ptime posix_time = ros_tstamp.toBoost();
+	std::string time_str = boost::posix_time::to_iso_extended_string(posix_time);
+	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
+											display_name + "_nav_" + time_str + ".txt";
+
+	FILE *fd = fopen(qualified_filename.c_str(), "w");
+	if (fd == nullptr)
+	{
+		ROS_ERROR("Unable to create file for saving nav/pos data");
+		return;
+	}
+
+	// Print the GPS fix here directly
+	sensor_msgs::NavSatFix nav_sat_fix;
+	{
+		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
+		nav_sat_fix = latest_nav_sat_fix;
+	}
+	fprintf(fd, "*** GPS Fix Data ***\n");
+	fprintf(fd, "\tTimestamp: %f\n", nav_sat_fix.header.stamp.toSec());
+	fprintf(fd, "\tStatus: %s, Service: %s\n", navSatStatusToString(nav_sat_fix.status.status), navSatServiceToString(nav_sat_fix.status.service));
+	fprintf(fd, "\tLatitude: %f deg, Longitude: %f deg\n", nav_sat_fix.latitude, nav_sat_fix.longitude);
+	fprintf(fd, "\tAltitude: %f m\n", nav_sat_fix.altitude);
+	// Let the AHRS data print itself
+	ahrs_data.print(fd);
+
+	fclose(fd);
+	static const mode_t mode = S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH; // 664
+	chmod(qualified_filename.c_str(), mode);
 }
 
 } // namespace Numurus

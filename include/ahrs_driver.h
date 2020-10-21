@@ -47,6 +47,15 @@ inline static const char* boolToCStringValid(bool input)
   return ((true == input)? "valid" : "invalid");
 }
 
+inline static const char* filterStatusToCString(AHRSFilterStatus status)
+{
+  if (status == AHRS_FILTER_STAT_STARTUP) return "STARTUP";
+  if (status == AHRS_FILTER_STAT_INIT   ) return "INIT";
+  if (status == AHRS_FILTER_STAT_RUN_VAL) return "RUNNING";
+  if (status == AHRS_FILTER_STAT_RUN_ERR) return "ERROR";
+  return "UNKNOWN";
+}
+
 struct AHRSDataSet
 {
   double timestamp = 0.0f;
@@ -83,18 +92,18 @@ struct AHRSDataSet
   bool heading_true_north = false;
   bool heading_valid = false;
 
-  inline void print()
+  inline void print(FILE *stream=stdout) const
   {
-    printf("*** AHRS Data ***\n");
-    printf("\tTimestamp: %f\n", timestamp);
-    printf("\tFilter State: 0x%x, Flags: 0x%x\n", filter_state, filter_flags);
-    printf("\tAccel: [%f, %f, %f] g -- %s\n", accel_x, accel_y, accel_z, boolToCStringValid(accel_valid));
-    printf("\tVelocity: [%f, %f, %f] m/s\n", velocity_x, velocity_y, velocity_z);
-    printf("\tAngular Rate: [%f, %f, %f] rad/s -- %s\n", angular_velocity_x, angular_velocity_y, angular_velocity_z,
+    fprintf(stream, "*** AHRS Data ***\n");
+    fprintf(stream, "\tTimestamp: %f\n", timestamp);
+    fprintf(stream, "\tFilter State: %s, Flags: 0x%x\n", filterStatusToCString(filter_state), filter_flags);
+    fprintf(stream, "\tAccel: [%f, %f, %f] g -- %s\n", accel_x, accel_y, accel_z, boolToCStringValid(accel_valid));
+    fprintf(stream, "\tVelocity: [%f, %f, %f] m/s\n", velocity_x, velocity_y, velocity_z);
+    fprintf(stream, "\tAngular Rate: [%f, %f, %f] rad/s -- %s\n", angular_velocity_x, angular_velocity_y, angular_velocity_z,
            boolToCStringValid(angular_velocity_valid));
-    printf("\tOrientation: [%f, %fi, %fj, %fk] -- %s\n", orientation_q0, orientation_q1_i, orientation_q2_j,
+    fprintf(stream, "\tOrientation: [%f, %fi, %fj, %fk] -- %s\n", orientation_q0, orientation_q1_i, orientation_q2_j,
           orientation_q3_k, boolToCStringValid(orientation_valid));
-    printf("\tHeading: %f deg (%s north) -- %s\n", heading,
+    fprintf(stream, "\tHeading: %f deg (%s north) -- %s\n", heading,
            (true == heading_true_north)? "true" : "mag.",
            boolToCStringValid(heading_valid));
   }

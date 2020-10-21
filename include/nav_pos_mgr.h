@@ -18,6 +18,7 @@ namespace Numurus
 {
 //class LORDAHRSDriver; // forward declaration;
 class AHRSDriver;
+class SaveDataInterface;
 
 class NavPosMgr : public SDKNode
 {
@@ -50,6 +51,8 @@ private:
 	std::mutex latest_nav_sat_fix_mutex;
 	sensor_msgs::NavSatFix latest_nav_sat_fix;
 
+	SaveDataInterface *save_data_if = nullptr;
+
 	/**
 	 * @brief      Provide the (interpolated) NavPos response for the requested timestamp
 	 *
@@ -79,6 +82,8 @@ private:
 	void serviceAHRS();
 
 	static bool validateAHRSData(const AHRSDataSet &ahrs_data);
+
+	void saveDataIfNecessary(const AHRSDataSet &ahrs_data);
 
 }; // class NavPosTimeMgr
 } // namespace Numurus
