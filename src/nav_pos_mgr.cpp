@@ -307,6 +307,10 @@ void NavPosMgr::serviceAHRS()
 	const ros::Duration TIME_UPDATE_INTERVAL(1.0); // 1Hz
 	ros::Time last_update_time = ros::Time::now();
 
+	// No sense running this thread much, much faster
+	// than the rest of the system can keep up. 100Hz is
+	// probably fine.
+	ros::Rate service_rate(AHRS_DRIVER_SERVICE_RATE);
 	while((true == ahrs_rcv_continue && true == ros::ok()))
 	{
 		// Query for the latest data
@@ -351,6 +355,8 @@ void NavPosMgr::serviceAHRS()
 			// And save the data to disk if necessary
 			saveDataIfNecessary(ahrs_data);
 		}
+
+		service_rate.sleep();
 	}
 
 	ROS_WARN("Terminating AHRS service thread");

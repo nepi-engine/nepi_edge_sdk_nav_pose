@@ -48,6 +48,7 @@ private:
 	size_t ahrs_data_stack_max_size;
 
 	AHRSDriver *ahrs = nullptr;
+	static constexpr double AHRS_DRIVER_SERVICE_RATE = 100; //Hz
 
 	std::atomic<bool> update_ahrs_nav_sat_fix;
 	std::mutex latest_nav_sat_fix_mutex;
