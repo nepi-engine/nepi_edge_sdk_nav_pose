@@ -3,8 +3,6 @@
 
 #include <sys/stat.h>
 
-#include "boost/date_time/posix_time/posix_time.hpp"
-
 #include "nav_pos_mgr.h"
 #include "lord_ahrs_driver.h"
 #include "ros_ahrs_driver.h"
@@ -381,12 +379,11 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 
 	// Build the filename
 	const std::string display_name = _display_name;
-	// Easiest way to convert double to iso timestamp is with boost via ROS
+	// Easiest way to convert double to iso timestamp is via ROS and the save_data_mgr
 	ros::Time ros_tstamp(ahrs_data.timestamp);
-	boost::posix_time::ptime posix_time = ros_tstamp.toBoost();
-	std::string time_str = boost::posix_time::to_iso_extended_string(posix_time);
+	const std::string tstamp_str = save_data_if->getTimestampString(ros_tstamp);
 	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
-											display_name + "_nav_" + time_str + ".txt";
+											display_name + "_nav_" + tstamp_str + ".txt";
 
 	FILE *fd = fopen(qualified_filename.c_str(), "w");
 	if (fd == nullptr)
