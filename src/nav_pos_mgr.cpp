@@ -123,6 +123,19 @@ void NavPosMgr::init()
 	ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
 }
 
+void NavPosMgr::retrieveParams()
+{
+	SDKNode::retrieveParams();
+	ahrs_comm_device.retrieve();
+	ahrs_update_rate_hz.retrieve();
+	ahrs_roll_offset_deg.retrieve();
+	ahrs_pitch_offset_deg.retrieve();
+	ahrs_yaw_offset_deg.retrieve();
+	ahrs_type.retrieve();
+	imu_topic.retrieve();
+	odom_topic.retrieve();
+}
+
 void NavPosMgr::initServices()
 {
 	// Call the base method

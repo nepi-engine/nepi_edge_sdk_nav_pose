@@ -28,6 +28,7 @@ public:
 
 	// Inherited from SDKNode
 	void init() override;
+	void retrieveParams() override;
 	void initServices() override;
 	void initSubscribers() override;
 
