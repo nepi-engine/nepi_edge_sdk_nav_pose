@@ -5,7 +5,8 @@ project(num_sdk_nav_pos_mgr)
 add_compile_options(-std=c++11)
 add_compile_options(-Wall)
 
-set(OpenCV_DIR /opt/ros/kinetic/share/OpenCV-3.3.1-dev)
+#set(OpenCV_DIR /opt/ros/kinetic/share/OpenCV-3.3.1-dev)
+set(OpenCV_DIR /usr/lib/aarch64-linux-gnu/cmake/opencv4)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
