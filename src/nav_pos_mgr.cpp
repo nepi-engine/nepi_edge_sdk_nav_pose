@@ -152,6 +152,8 @@ void NavPosMgr::initSubscribers()
 	SDKNode::initSubscribers();
 
 	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_heading_override", 3, &NavPosMgr::setHeadingOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("clear_heading_override", 3, &NavPosMgr::clearHeadingOverrideHandler, this));
 
 	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPosMgr::setIMUTopic, this));
 	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPosMgr::setOdomTopic, this));
@@ -273,6 +275,23 @@ void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 		// handles all calls into driver API, just signal it here
 		update_ahrs_nav_sat_fix = true; // atomic variable
 	}
+}
+
+void NavPosMgr::setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg)
+{
+	if (msg->heading < 0.0 || msg->heading >= 360.0)
+	{
+		ROS_ERROR("Invalid heading override: %f deg... ignoring", msg->heading);
+	}
+	else
+	{
+		ahrs->overrideHeadingData(msg->heading, msg->true_north);
+	}
+}
+
+void NavPosMgr::clearHeadingOverrideHandler(const std_msgs::Empty::ConstPtr &msg)
+{
+	ahrs->clearHeadingOverride();
 }
 
 void NavPosMgr::ensureAHRSTypeROS()

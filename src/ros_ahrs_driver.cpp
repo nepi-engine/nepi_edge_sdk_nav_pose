@@ -31,6 +31,15 @@ bool ROSAHRSDriver::receiveLatestData(AHRSDataSet &data_out)
   return true;
 }
 
+void ROSAHRSDriver::overrideHeadingData(float heading_deg, bool heading_true_north)
+{
+  std::lock_guard<std::mutex> lk(ahrs_data_mutex);
+  heading_override = true;
+  heading_override_deg = heading_deg;
+  heading_override_true_north = heading_true_north;
+}
+
+
 void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, const nav_msgs::OdometryConstPtr& odom_msg)
 {
   //ROS_INFO("Debugging: Got IMU and Odometry");
@@ -79,10 +88,18 @@ void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, 
   latest_ahrs.orientation_valid = true;
 
   // Heading (deg)
-  // No heading computation (yet, though there is a magnetometer, so possible) -- Just zero it.
-  latest_ahrs.heading = 0.0f;
-  latest_ahrs.heading_true_north = false;
-  latest_ahrs.heading_valid = false;
+  if (true == heading_override)
+  {
+    latest_ahrs.heading = heading_override_deg;
+    latest_ahrs.heading_true_north = heading_override_true_north;
+    latest_ahrs.heading_valid = true;
+  }
+  else // No heading source yet, though we should support when a magnetometer is available -- Just zero it for now
+  {
+    latest_ahrs.heading = 0.0f;
+    latest_ahrs.heading_true_north = false;
+    latest_ahrs.heading_valid = false;
+  }
 }
 
 void ROSAHRSDriver::setIMUSubscription(ros::NodeHandle parent_pub_nh, const std::string &imu_topic)

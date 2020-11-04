@@ -120,9 +120,20 @@ public:
                            const AHRSRollPitchYaw &sensor_to_vehicle) {return true;}
   virtual inline bool updateSystemTime(uint32_t posix_time){return true;}
   virtual inline bool updateReferencePosition(const AHRSReferencePosition &pos){return true;}
+  virtual void overrideHeadingData(float heading_deg, bool heading_true_north) {
+    heading_override = true;
+    heading_override_deg = heading_deg;
+    heading_override_true_north = heading_true_north;
+  }
+  virtual inline void clearHeadingOverride(){heading_override = false;}
 
    // Subclasses MUST implement
   virtual bool receiveLatestData(AHRSDataSet &data_out) = 0;
+
+protected:
+  bool heading_override = false;
+  float heading_override_deg = 0.0f;
+  bool heading_override_true_north = true;
 }; // class AHRSDriver
 
 } // namespance Numurus

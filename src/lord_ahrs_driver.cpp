@@ -11,6 +11,8 @@
 //#define PRINT_RX_BYTES
 //#define PRINT_TX_BYTES
 
+#warning "Lord AHRS Driver needs thread safety"
+
 namespace Numurus
 {
 
@@ -1631,18 +1633,27 @@ void LORDAHRSDriver::mergeAHRSData(const LORDAHRSIMUData &imu_data_in, const LOR
   merged_out.orientation_valid = est_filt_data_in.quaternion.valid;
 
   // Heading
-  // Convert to heading degrees true North via atan2, a declination adjustment,a unit conversion, and a range transformation!
-  static constexpr float RAD_TO_DEG = 57.2957795f;
-  merged_out.heading_true_north = (est_filt_data_in.mag_solution.valid && world_mag_model_enabled);
-  const float declination_correction = (true == merged_out.heading_true_north)?
-    est_filt_data_in.mag_solution.declination_rad : 0.0f;
-  merged_out.heading = RAD_TO_DEG *
-                      (-atan2(imu_data_in.stabilized_mag.y, imu_data_in.stabilized_mag.x) -
-                       declination_correction);
-  if (merged_out.heading < 0.0) // Want non-negative heading
+  if (true == heading_override)
   {
-    merged_out.heading += 360.0f;
+    merged_out.heading = heading_override_deg;
+    merged_out.heading_true_north = heading_override_true_north;
+    merged_out.heading_valid = true;
   }
-  merged_out.heading_valid = est_filt_data_in.mag_solution.valid;
+  else
+  {
+    // Convert to heading degrees true North via atan2, a declination adjustment,a unit conversion, and a range transformation!
+    static constexpr float RAD_TO_DEG = 57.2957795f;
+    merged_out.heading_true_north = (est_filt_data_in.mag_solution.valid && world_mag_model_enabled);
+    const float declination_correction = (true == merged_out.heading_true_north)?
+      est_filt_data_in.mag_solution.declination_rad : 0.0f;
+    merged_out.heading = RAD_TO_DEG *
+                        (-atan2(imu_data_in.stabilized_mag.y, imu_data_in.stabilized_mag.x) -
+                         declination_correction);
+    if (merged_out.heading < 0.0) // Want non-negative heading
+    {
+      merged_out.heading += 360.0f;
+    }
+    merged_out.heading_valid = est_filt_data_in.mag_solution.valid;
+  }
 }
 } //namespace Numurus

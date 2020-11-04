@@ -23,6 +23,7 @@ public:
 
   // Implement the abstract AHRSDriver interface
   bool receiveLatestData(AHRSDataSet &data_out) override;
+  void overrideHeadingData(float heading_deg, bool heading_true_north) override;
 
   void setIMUSubscription(ros::NodeHandle parent_pub_nh, const std::string &imu_topic);
   void setOdomSubscription(ros::NodeHandle parent_pub_nh, const std::string &odom_topic);

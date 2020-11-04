@@ -6,7 +6,9 @@
 #include <mutex>
 #include <deque>
 
+#include "std_msgs/Empty.h"
 #include "sensor_msgs/NavSatFix.h"
+#include "num_sdk_msgs/Heading.h"
 
 #include "sdk_node.h"
 //#include "lord_ahrs_driver.h"
@@ -82,6 +84,8 @@ private:
 	bool provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request &req, num_sdk_msgs::NavPosStatusQuery::Response &resp);
 
 	void setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
+	void setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg);
+	void clearHeadingOverrideHandler(const std_msgs::Empty::ConstPtr &msg);
 
 	void setIMUTopic(const std_msgs::String::ConstPtr &msg);
 	void setOdomTopic(const std_msgs::String::ConstPtr &msg);
