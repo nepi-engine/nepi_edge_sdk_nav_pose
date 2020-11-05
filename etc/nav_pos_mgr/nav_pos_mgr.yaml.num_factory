@@ -1,1 +1,11 @@
-display_name: nav_pos_mgr
+ahrs_comm_device: ''                                   # Serial device path, only applicable if mode == "lord"
+ahrs_pitch_offset_deg: 0.0                             # Additive offset to the AHRS-reported pitch
+ahrs_roll_offset_deg: 0.0                              # Additive offset to the AHRS-reported roll
+ahrs_type: ros                                         # "ros" ==> AHRS via IMU and Odometry messages, "lord" ==> AHRS via Lord serial interface
+ahrs_update_rate_hz: 10.0                              # Hardware update rate, only applicable if mode == "lord"
+ahrs_yaw_offset_deg: 0.0                               # Additive offset to the AHRS-reported
+display_name: nav_pos_mgr                              # User-friendly name for display purposes
+imu_topic: 3dx_device/stereo_cam_driver/imu/data       # IMU topic w.r.t. base namespace for mode == "ros"
+odom_topic: 3dx_device/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for mode == "odom"
+save_data_continuous: false                            # true ==> Every change to a configurable parameters is saved to file
+save_data_raw: false                                   # No effect for this node. No raw data defined
