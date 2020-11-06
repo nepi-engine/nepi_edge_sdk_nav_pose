@@ -418,8 +418,7 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 	// Build the filename
 	const std::string display_name = _display_name;
 	// Easiest way to convert double to iso timestamp is via ROS and the save_data_mgr
-	ros::Time ros_tstamp(ahrs_data.timestamp);
-	const std::string tstamp_str = save_data_if->getTimestampString(ros_tstamp);
+	const std::string tstamp_str = save_data_if->getTimestampString();
 	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
 											display_name + "_nav_" + tstamp_str + ".txt";
 
