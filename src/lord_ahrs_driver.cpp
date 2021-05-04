@@ -626,7 +626,7 @@ bool LORDAHRSDriver::queryDeviceInfo()
   // Now check and parse the response
   if (response_fields.size() != 1)
   {
-    printf("Unexpected number of response fields (%lu) for device info query response\n", response_fields.size());
+    printf("Unexpected number of response fields (%zu) for device info query response\n", response_fields.size());
     return false;
   }
 
@@ -720,7 +720,7 @@ bool LORDAHRSDriver::queryDataBaseRates(uint16_t &imu_base_rate, uint16_t &est_f
 
   if (imu_response_fields.size() != 1)
   {
-    printf("Unexpected number of response fields (%lu) for imu base rate query response\n", imu_response_fields.size());
+    printf("Unexpected number of response fields (%zu) for imu base rate query response\n", imu_response_fields.size());
     return false;
   }
   LORDMIPField *imu_base_rate_resp_field = &(imu_response_fields[0]);
@@ -737,7 +737,7 @@ bool LORDAHRSDriver::queryDataBaseRates(uint16_t &imu_base_rate, uint16_t &est_f
 
   if (est_filt_response_fields.size() != 1)
   {
-    printf("Unexpected number of response fields (%lu) for est filter base rate query response\n", est_filt_response_fields.size());
+    printf("Unexpected number of response fields (%zu) for est filter base rate query response\n", est_filt_response_fields.size());
     return false;
   }
   LORDMIPField *est_filter_base_rate_resp_field = &(est_filt_response_fields[0]);
@@ -903,7 +903,7 @@ bool LORDAHRSDriver::transmitMIPPktSynchronous(const LORDMIPPkt &pkt, std::vecto
   const size_t tx_pkt_field_count = pkt.fields.size();
   if (tx_pkt_field_count != 1)
   {
-    printf("Packets with %lu fields not supported for transmit\n", tx_pkt_field_count);
+    printf("Packets with %zu fields not supported for transmit\n", tx_pkt_field_count);
     return false;
   }
   // Serialize the packet into a byte stream
