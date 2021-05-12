@@ -52,6 +52,9 @@
   <depend>rospy</depend>
   <depend>num_sdk_msgs</depend>
   <depend>num_sdk_base</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
+  <depend>tf2_ros</depend>
   <build_depend>message_generation</build_depend>
   <buildtool_depend>catkin</buildtool_depend>
   <exec_depend>message_runtime</exec_depend>

@@ -16,7 +16,7 @@ endif()
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp num_sdk_base num_sdk_msgs cv_bridge OpenCV)
+find_package(catkin REQUIRED COMPONENTS roscpp num_sdk_base num_sdk_msgs cv_bridge OpenCV pcl_ros pcl_conversions tf2_ros)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
