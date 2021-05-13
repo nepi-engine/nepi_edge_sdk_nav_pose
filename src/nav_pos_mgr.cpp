@@ -3,6 +3,11 @@
 
 #include <sys/stat.h>
 
+#include "geometry_msgs/Vector3Stamped.h"
+#include "geometry_msgs/QuaternionStamped.h"
+#include "geometry_msgs/TransformStamped.h"
+#include "tf2/LinearMath/Quaternion.h"
+
 #include "nav_pos_mgr.h"
 #include "lord_ahrs_driver.h"
 #include "ros_ahrs_driver.h"
@@ -16,6 +21,9 @@
 #define AHRS_TYPE_ROS "ros"
 
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
+#define RAD_TO_DEG(angle_rad) ((angle_rad) * 180.0f / M_PI)
+
+#define OFFSETS_SET_FRAME_ID		"3dx_ahrs_frame"
 
 namespace Numurus
 {
@@ -41,12 +49,18 @@ static inline const char* navSatServiceToString(int8_t service)
 NavPosMgr::NavPosMgr() :
 	ahrs_comm_device{"ahrs_comm_device", "", this}, // e.g., /dev/ttyUSB0 for LORD via USB
 	ahrs_update_rate_hz{"ahrs_update_rate_hz", 10.0f, this},
-	ahrs_roll_offset_deg{"ahrs_roll_offset_deg", 0.0f, this},
-	ahrs_pitch_offset_deg{"ahrs_pitch_offset_deg", 0.0f, this},
-	ahrs_yaw_offset_deg{"ahrs_yaw_offset_deg", 0.0f, this},
+	ahrs_offsets_set{"ahrs_offset/offsets_set", false, this},
+	ahrs_x_offset_m{"ahrs_offset/x_m", 0.0f, this},
+	ahrs_y_offset_m{"ahrs_offset/y_m", 0.0f, this},
+	ahrs_z_offset_m{"ahrs_offset/z_m", 0.0f, this},
+	ahrs_x_rot_offset_deg{"ahrs_offset/x_rot_deg", 0.0f, this},
+	ahrs_y_rot_offset_deg{"ahrs_offset/y_rot_deg", 0.0f, this},
+	ahrs_z_rot_offset_deg{"ahrs_offset/z_rot_deg", 0.0f, this},
 	ahrs_type{"ahrs_type", AHRS_TYPE_ROS, this}, // Better default?
 	imu_topic{"imu_topic", "3dx_device/stereo_cam_driver/imu/data", this}, // Better default?
 	odom_topic{"odom_topic", "3dx_device/stereo_cam_driver/odom", this}, // Better default?
+	ahrs_src_frame_id{"ahrs_src_frame_id", "stereo_cam_imu_link", this},
+	ahrs_out_frame_id{"ahrs_out_frame_id", "3dx_center_frame", this},
 	ahrs_ready{false},
 	ahrs_rcv_thread{nullptr},
 	ahrs_rcv_continue{false},
@@ -55,7 +69,7 @@ NavPosMgr::NavPosMgr() :
 {
 	latest_nav_sat_fix.header.seq = 0;
 	latest_nav_sat_fix.header.stamp = ros::Time(0.0);
-	latest_nav_sat_fix.header.frame_id = "vehicle_frame";
+	latest_nav_sat_fix.header.frame_id = ahrs_out_frame_id;
 	latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_NO_FIX;
 	latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
 	latest_nav_sat_fix.latitude = 0.0;
@@ -104,9 +118,12 @@ void NavPosMgr::init()
 	}
 
 	// Initialize the AHRS
+	/*
 	const AHRSRollPitchYaw rpy_rad(DEG_TO_RAD(ahrs_roll_offset_deg),
 																 DEG_TO_RAD(ahrs_pitch_offset_deg),
 															 	 DEG_TO_RAD(ahrs_yaw_offset_deg));
+	*/
+	const AHRSRollPitchYaw rpy_rad(0.0, 0.0, 0.0); // Now handling this via ROS TF, so don't apply at transform at the sensor
 	const std::time_t now_s = std::time(0);
 	std::string ahrs_comm_device_name = ahrs_comm_device; // Must assign to get the cast overload on SDKNodeParam to kick in.
 	ahrs_ready = ahrs->init(ahrs_comm_device_name.c_str(), ahrs_update_rate_hz, now_s,
@@ -128,12 +145,20 @@ void NavPosMgr::retrieveParams()
 	SDKNode::retrieveParams();
 	ahrs_comm_device.retrieve();
 	ahrs_update_rate_hz.retrieve();
-	ahrs_roll_offset_deg.retrieve();
-	ahrs_pitch_offset_deg.retrieve();
-	ahrs_yaw_offset_deg.retrieve();
+	ahrs_offsets_set.retrieve();
+	ahrs_x_offset_m.retrieve();
+	ahrs_y_offset_m.retrieve();
+	ahrs_z_offset_m.retrieve();
+	ahrs_x_rot_offset_deg.retrieve();
+	ahrs_y_rot_offset_deg.retrieve();
+	ahrs_z_rot_offset_deg.retrieve();
 	ahrs_type.retrieve();
 	imu_topic.retrieve();
 	odom_topic.retrieve();
+	ahrs_src_frame_id.retrieve();
+	ahrs_out_frame_id.retrieve();
+
+	setupAHRSOffsetFrame();
 }
 
 void NavPosMgr::initServices()
@@ -157,6 +182,9 @@ void NavPosMgr::initSubscribers()
 
 	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPosMgr::setIMUTopic, this));
 	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPosMgr::setOdomTopic, this));
+
+	subscribers.push_back(n_priv.subscribe("set_ahrs_src_frame", 3, &NavPosMgr::setAHRSSourceFrameHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPosMgr::setAHRSOutputFrameHandler, this));
 }
 
 bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
@@ -260,6 +288,14 @@ bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, n
 		}
 	}
 
+	// Finally, the current AHRS transform via transform_listener
+	ros::Time latest(0.0);
+	const std::string src_frame = ahrs_src_frame_id;
+	const std::string target_frame = ahrs_out_frame_id;
+	tf::StampedTransform transform;
+	transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
+	tf::transformStampedTFToMsg(transform, resp.status.transform);
+
 	return true;
 }
 
@@ -333,6 +369,34 @@ void NavPosMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
 	odom_topic = msg->data;
 }
 
+void NavPosMgr::setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg)
+{
+	const std::string src_frame = msg->data;
+	if (false == transform_listener.frameExists(src_frame))
+	{
+		ROS_ERROR("Cannot set source frame to %s -- frame does not exist", src_frame.c_str());
+		return;
+	}
+	// Clear the offsets_set flag and apply -- mutual exclusion here
+	ahrs_offsets_set = false;
+	setupAHRSOffsetFrame();
+
+	ahrs_src_frame_id = src_frame; // TODO: Thread safety?
+
+}
+
+void NavPosMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
+{
+	const std::string output_frame = msg->data;
+	if (false == transform_listener.frameExists(output_frame))
+	{
+		ROS_ERROR("Cannot set output frame to %s -- frame does not exist", output_frame.c_str());
+		return;
+	}
+	ahrs_out_frame_id = output_frame; // TODO: Thread safety?
+}
+
+
 void NavPosMgr::serviceAHRS()
 {
 	// Time update rate
@@ -375,6 +439,17 @@ void NavPosMgr::serviceAHRS()
 		// Now, stuff the data on our stack as long as it is sufficiently "valid"
 		if ((true == got_data) && (true == validateAHRSData(ahrs_data)))
 		{
+			// For now, we transform every ahrs_data that goes on the stack, but
+			// we could optimize by transforming only those that are getting saved to file
+			// or transmitted as part of a request -- however, that requires that the
+			// data timestamp is within the transform_listener buffer window (10 secs by default),
+			// so would need some safeguards.
+			if (false == transformAHRSData(ahrs_data)) // Transforms in place
+			{
+				// Just return -- don't stick it on the stack and don't save it
+				return; // error logged upstream
+			}
+
 			std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
 			// Clear the end of this fixed-size stack if necessary before adding a new
 			// element
@@ -446,6 +521,160 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 	fclose(fd);
 	static const mode_t mode = S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH; // 664
 	chmod(qualified_filename.c_str(), mode);
+
+	// And do the calibration
+	if (true == save_data_if->calibrationShouldSave())
+	{
+		// TODO: Any calibration?
+		//const std::string qualified_cal_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
+		//										display_name + "_nav_offsets.txt";
+
+	}
+}
+
+bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
+{
+	geometry_msgs::Vector3Stamped vect3_in;
+	vect3_in.header.seq = 0;
+	vect3_in.header.stamp = ros::Time(ahrs_data.timestamp);
+	vect3_in.header.frame_id = ahrs_src_frame_id;
+
+	bool transformed = false;
+	bool timed_out = false;
+	ros::Time start_time = ros::Time::now();
+	ros::Duration timeout_period(0.5); // TODO: Configurable?
+	while ((transformed == false) && (timed_out == false))
+	{
+		try
+		{
+			geometry_msgs::Vector3Stamped vect3_out;
+
+			// Linear accelerations
+			if (ahrs_data.accel_valid)
+			{
+				vect3_in.vector.x = ahrs_data.accel_x;
+				vect3_in.vector.y = ahrs_data.accel_y;
+				vect3_in.vector.z = ahrs_data.accel_z;
+
+				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
+
+				ahrs_data.accel_x = vect3_out.vector.x;
+				ahrs_data.accel_y = vect3_out.vector.y;
+				ahrs_data.accel_z = vect3_out.vector.z;
+			}
+
+			// Linear Velocity
+			vect3_in.vector.x = ahrs_data.velocity_x;
+			vect3_in.vector.y = ahrs_data.velocity_y;
+			vect3_in.vector.z = ahrs_data.velocity_z;
+
+			transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
+
+			ahrs_data.velocity_x = vect3_out.vector.x;
+			ahrs_data.velocity_y = vect3_out.vector.y;
+			ahrs_data.velocity_z = vect3_out.vector.z;
+
+			// Angular Velocity
+			if (ahrs_data.angular_velocity_valid)
+			{
+				vect3_in.vector.x = ahrs_data.angular_velocity_x;
+				vect3_in.vector.y = ahrs_data.angular_velocity_y;
+				vect3_in.vector.z = ahrs_data.angular_velocity_z;
+
+				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
+
+				ahrs_data.angular_velocity_x = vect3_out.vector.x;
+				ahrs_data.angular_velocity_y = vect3_out.vector.y;
+				ahrs_data.angular_velocity_z = vect3_out.vector.z;
+			}
+
+			// Orientation
+			if (ahrs_data.angular_velocity_valid)
+			{
+				geometry_msgs::QuaternionStamped quat_in;
+				quat_in.header.seq = 0;
+				quat_in.header.stamp = ros::Time(ahrs_data.timestamp);
+				quat_in.header.frame_id = ahrs_src_frame_id;
+
+				geometry_msgs::QuaternionStamped quat_out;
+
+				quat_in.quaternion.x = ahrs_data.orientation_q1_i;
+				quat_in.quaternion.y = ahrs_data.orientation_q2_j;
+				quat_in.quaternion.z = ahrs_data.orientation_q3_k;
+				quat_in.quaternion.w = ahrs_data.orientation_q0;
+
+				transform_listener.transformQuaternion(ahrs_out_frame_id, quat_in, quat_out);
+
+				ahrs_data.orientation_q1_i = quat_out.quaternion.x;
+				ahrs_data.orientation_q2_j = quat_out.quaternion.y;
+				ahrs_data.orientation_q3_k = quat_out.quaternion.z;
+				ahrs_data.orientation_q0 = quat_out.quaternion.w;
+			}
+
+			// Heading
+			// TODO: Maybe transformation of heading should be configurable?
+			if (ahrs_data.heading_valid)
+			{
+				// Make a vector out of the heading and transform it
+				vect3_in.vector.x = cos(DEG_TO_RAD(ahrs_data.heading));
+				vect3_in.vector.y = -sin(DEG_TO_RAD(ahrs_data.heading));
+				vect3_in.vector.z = 0.0;
+
+				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
+
+				// Now make a heading from the output vector
+				// TODO: How do we know which dimension of the new frame is 'forward'???
+				ahrs_data.heading = RAD_TO_DEG(atan2(vect3_out.vector.x, vect3_out.vector.y));
+			}
+			// If we get this far, set the exit condition
+			transformed = true;
+		}
+		catch (tf2::TransformException &ex)
+		{
+			ROS_WARN_ONCE("%s", ex.what());
+			if ((ros::Time::now() - start_time) > timeout_period)
+			{
+				ROS_WARN_THROTTLE(1.0, "Frame listener timeout while trying to transform AHRS data");
+				timed_out = true;
+			}
+		}
+	}
+	return (transformed && !timed_out);
+}
+
+void NavPosMgr::setupAHRSOffsetFrame()
+{
+	if (true == ahrs_offsets_set)
+	{
+		ROS_INFO("Setting up a new AHRS Offset Frame:\n\tTranslation = [%f,%f,%f]\n\tRotation = [%f,%f,%f]",
+						 (float)ahrs_x_offset_m, (float)ahrs_y_offset_m, (float)ahrs_z_offset_m,
+						 (float)ahrs_x_rot_offset_deg, (float)ahrs_y_offset_m, (float)ahrs_z_offset_m);
+		geometry_msgs::TransformStamped static_transform;
+		static_transform.header.stamp = ros::Time::now();
+		static_transform.header.frame_id = ahrs_out_frame_id;
+		static_transform.child_frame_id = OFFSETS_SET_FRAME_ID;
+		static_transform.transform.translation.x = ahrs_x_offset_m;
+		static_transform.transform.translation.y = ahrs_y_offset_m;
+		static_transform.transform.translation.z = ahrs_z_offset_m;
+		tf2::Quaternion quat;
+		quat.setRPY(ahrs_x_rot_offset_deg, ahrs_y_rot_offset_deg, ahrs_x_rot_offset_deg);
+		static_transform.transform.rotation.x = quat.x();
+		static_transform.transform.rotation.y = quat.y();
+		static_transform.transform.rotation.z = quat.z();
+		static_transform.transform.rotation.w = quat.w();
+		static_transform_broadcaster.sendTransform(static_transform);
+
+		// Update the output frame
+		ahrs_src_frame_id = OFFSETS_SET_FRAME_ID;
+	}
+	else // Clearing the offsets
+	{
+		// If we are clearing from previously set, set the source to the output as the fallback
+		if (ahrs_src_frame_id == OFFSETS_SET_FRAME_ID)
+		{
+			ahrs_src_frame_id = ahrs_out_frame_id;
+		}
+	}
 }
 
 } // namespace Numurus

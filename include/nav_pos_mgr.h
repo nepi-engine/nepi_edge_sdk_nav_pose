@@ -6,6 +6,8 @@
 #include <mutex>
 #include <deque>
 
+#include "tf/transform_listener.h"
+#include "tf2_ros/static_transform_broadcaster.h"
 #include "std_msgs/Empty.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "num_sdk_msgs/Heading.h"
@@ -37,12 +39,18 @@ public:
 private:
 	NodeParam<std::string> ahrs_comm_device;
 	NodeParam<float> ahrs_update_rate_hz;
-	NodeParam<float> ahrs_roll_offset_deg;
-	NodeParam<float> ahrs_pitch_offset_deg;
-	NodeParam<float> ahrs_yaw_offset_deg;
+	NodeParam<bool> ahrs_offsets_set;
+	NodeParam<float> ahrs_x_offset_m;
+	NodeParam<float> ahrs_y_offset_m;
+	NodeParam<float> ahrs_z_offset_m;
+	NodeParam<float> ahrs_x_rot_offset_deg;
+	NodeParam<float> ahrs_y_rot_offset_deg;
+	NodeParam<float> ahrs_z_rot_offset_deg;
 	NodeParam<std::string> ahrs_type;
 	NodeParam<std::string> imu_topic;
 	NodeParam<std::string> odom_topic;
+	NodeParam<std::string> ahrs_src_frame_id;
+	NodeParam<std::string> ahrs_out_frame_id;
 	bool ahrs_ready;
 	std::thread *ahrs_rcv_thread;
 	std::atomic<bool> ahrs_rcv_continue;
@@ -58,6 +66,9 @@ private:
 	sensor_msgs::NavSatFix latest_nav_sat_fix;
 
 	SaveDataInterface *save_data_if = nullptr;
+
+	tf::TransformListener transform_listener;
+	tf2_ros::StaticTransformBroadcaster static_transform_broadcaster;
 
 	/**
 	 * @brief      Provide the (interpolated) NavPos response for the requested timestamp
@@ -90,6 +101,9 @@ private:
 	void setIMUTopic(const std_msgs::String::ConstPtr &msg);
 	void setOdomTopic(const std_msgs::String::ConstPtr &msg);
 
+	void setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg);
+	void setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg);
+
 	void serviceAHRS();
 
 	static bool validateAHRSData(const AHRSDataSet &ahrs_data);
@@ -97,6 +111,10 @@ private:
 	void saveDataIfNecessary(const AHRSDataSet &ahrs_data);
 
 	void ensureAHRSTypeROS();
+
+	bool transformAHRSData(AHRSDataSet &ahrs_data);
+
+	void setupAHRSOffsetFrame();
 
 }; // class NavPosTimeMgr
 } // namespace Numurus

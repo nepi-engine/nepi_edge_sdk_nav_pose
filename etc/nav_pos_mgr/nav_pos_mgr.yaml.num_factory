@@ -1,11 +1,18 @@
 ahrs_comm_device: ''                                   # Serial device path, only applicable if mode == "lord"
-ahrs_pitch_offset_deg: 0.0                             # Additive offset to the AHRS-reported pitch
-ahrs_roll_offset_deg: 0.0                              # Additive offset to the AHRS-reported roll
 ahrs_type: ros                                         # "ros" ==> AHRS via IMU and Odometry messages, "lord" ==> AHRS via Lord serial interface
 ahrs_update_rate_hz: 10.0                              # Hardware update rate, only applicable if mode == "lord"
-ahrs_yaw_offset_deg: 0.0                               # Additive offset to the AHRS-reported
 display_name: nav_pos_mgr                              # User-friendly name for display purposes
-imu_topic: 3dx_device/stereo_cam_driver/imu/data       # IMU topic w.r.t. base namespace for mode == "ros"
-odom_topic: 3dx_device/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for mode == "odom"
+imu_topic: 3dx_device/stereo_cam_driver/imu/data       # IMU topic w.r.t. base namespace for ahrs_type == "ros"
+odom_topic: 3dx_device/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for ahrs_type == "ros"
 save_data_continuous: false                            # true ==> Every change to a configurable parameters is saved to file
 save_data_raw: false                                   # No effect for this node. No raw data defined
+ahrs_offset:                                           # Transform parameters for ahrs/imu source
+  offsets_set:      false                              # If true, a new source frame will be constructed for AHRS/IMU data as provided by 6-DOF offsets
+  x_m:              0.0                                # x-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  y_m:              0.0                                # y-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  z_m:              0.0                                # x-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  x_rot_deg:        0.0                                # x-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  y_rot_deg:        0.0                                # y-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  z_rot_deg:        0.0                                # z-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
+ahrs_src_frame_id: 'stereo_cam_imu_link'               # TF name for AHRS/IMU data source (only applicable if ahrs_offset/offsets_set is false)
+ahrs_out_frame_id: '3dx_center_frame'                  # TF into which AHRS/IMU data should be transformed
