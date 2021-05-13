@@ -60,6 +60,7 @@ void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, 
   latest_ahrs.velocity_x = odom_msg->twist.twist.linear.x;
   latest_ahrs.velocity_y = odom_msg->twist.twist.linear.y;
   latest_ahrs.velocity_z = odom_msg->twist.twist.linear.z;
+  latest_ahrs.velocity_valid = true;
 
   // Angular Velocity (rad/s), frame transformation applied
   /*

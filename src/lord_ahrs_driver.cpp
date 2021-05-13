@@ -1618,6 +1618,7 @@ void LORDAHRSDriver::mergeAHRSData(const LORDAHRSIMUData &imu_data_in, const LOR
   accumulated_velocity_z += imu_data_in.delta_v_vector.z;
   merged_out.velocity_z = accumulated_velocity_z;
   */
+  merged_out.velocity_valid = false;
 
   // Angular velocity
   merged_out.angular_velocity_x = est_filt_data_in.angular_rate.x;

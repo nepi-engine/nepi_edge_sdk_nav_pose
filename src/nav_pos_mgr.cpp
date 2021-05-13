@@ -293,7 +293,7 @@ bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, n
 	const std::string src_frame = ahrs_src_frame_id;
 	const std::string target_frame = ahrs_out_frame_id;
 	tf::StampedTransform transform;
-	transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
+	transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
 	tf::transformStampedTFToMsg(transform, resp.status.transform);
 
 	return true;
@@ -484,23 +484,40 @@ bool NavPosMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
 
 void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 {
-	const bool needs_save = save_data_if->saveContinuousEnabled() && save_data_if->dataProductShouldSave("nav_pos");
+	// Good place to check if we need to close a previously open file due to
+	// data saving being disabled
+	const bool save_enabled = save_data_if->saveContinuousEnabled();
+	if ((false == save_enabled) && (nullptr != data_fd))
+	{
+		fclose(data_fd);
+		data_fd = nullptr;
+		return;
+	}
+
+	const bool needs_save = save_enabled && save_data_if->dataProductShouldSave("nav_pos");
 	if (false == needs_save)
 	{
 		return;
 	}
 
-	// Build the filename
-	const std::string display_name = _display_name;
-	// Easiest way to convert double to iso timestamp is via ROS and the save_data_mgr
-	const std::string tstamp_str = save_data_if->getTimestampString();
-	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
-											display_name + "_nav_" + tstamp_str + ".txt";
-
-	FILE *fd = fopen(qualified_filename.c_str(), "w");
-	if (fd == nullptr)
+	// Do the calibration if necessary
+	if (true == save_data_if->calibrationShouldSave())
 	{
-		ROS_ERROR("Unable to create file for saving nav/pos data");
+		// TODO: Any calibration. i.e., complete list of transfer frames?
+
+		// Also use this to indicate that we need a new file started -- the logic is the same as
+		// for when we need a new calibration file saved, so this is just a bit of a hack
+		need_new_data_file = true;
+	}
+
+	if ((true == need_new_data_file) || (nullptr == data_fd))
+	{
+		startNewDataFile();
+	}
+
+	if (nullptr == data_fd) // Failed to open a new file
+	{
+		// Error logged upstream, just return
 		return;
 	}
 
@@ -510,26 +527,16 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
 		nav_sat_fix = latest_nav_sat_fix;
 	}
-	fprintf(fd, "*** GPS Fix Data ***\n");
-	fprintf(fd, "\tTimestamp: %f\n", nav_sat_fix.header.stamp.toSec());
-	fprintf(fd, "\tStatus: %s, Service: %s\n", navSatStatusToString(nav_sat_fix.status.status), navSatServiceToString(nav_sat_fix.status.service));
-	fprintf(fd, "\tLatitude: %f deg, Longitude: %f deg\n", nav_sat_fix.latitude, nav_sat_fix.longitude);
-	fprintf(fd, "\tAltitude: %f m\n", nav_sat_fix.altitude);
+	fprintf(data_fd, "  -  gps:\n");
+	fprintf(data_fd, "       timestamp: %f\n", nav_sat_fix.header.stamp.toSec());
+	fprintf(data_fd, "       status: %s\n", navSatStatusToString(nav_sat_fix.status.status));
+	fprintf(data_fd, "       service: %s\n", navSatServiceToString(nav_sat_fix.status.service));
+	fprintf(data_fd, "       latitude: %f\n", nav_sat_fix.latitude);
+	fprintf(data_fd, "       longitude: %f\n", nav_sat_fix.longitude);
+	fprintf(data_fd, "       altitude: %f\n", nav_sat_fix.altitude);
 	// Let the AHRS data print itself
-	ahrs_data.print(fd);
 
-	fclose(fd);
-	static const mode_t mode = S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH; // 664
-	chmod(qualified_filename.c_str(), mode);
-
-	// And do the calibration
-	if (true == save_data_if->calibrationShouldSave())
-	{
-		// TODO: Any calibration?
-		//const std::string qualified_cal_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
-		//										display_name + "_nav_offsets.txt";
-
-	}
+	ahrs_data.printYAML(data_fd, "     ");
 }
 
 bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
@@ -631,9 +638,9 @@ bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
 		}
 		catch (tf2::TransformException &ex)
 		{
-			ROS_WARN_ONCE("%s", ex.what());
 			if ((ros::Time::now() - start_time) > timeout_period)
 			{
+				ROS_WARN_THROTTLE(1.0, "%s", ex.what());
 				ROS_WARN_THROTTLE(1.0, "Frame listener timeout while trying to transform AHRS data");
 				timed_out = true;
 			}
@@ -657,7 +664,7 @@ void NavPosMgr::setupAHRSOffsetFrame()
 		static_transform.transform.translation.y = ahrs_y_offset_m;
 		static_transform.transform.translation.z = ahrs_z_offset_m;
 		tf2::Quaternion quat;
-		quat.setRPY(ahrs_x_rot_offset_deg, ahrs_y_rot_offset_deg, ahrs_x_rot_offset_deg);
+		quat.setRPY(DEG_TO_RAD(ahrs_x_rot_offset_deg), DEG_TO_RAD(ahrs_y_rot_offset_deg), DEG_TO_RAD(ahrs_z_rot_offset_deg));
 		static_transform.transform.rotation.x = quat.x();
 		static_transform.transform.rotation.y = quat.y();
 		static_transform.transform.rotation.z = quat.z();
@@ -675,6 +682,67 @@ void NavPosMgr::setupAHRSOffsetFrame()
 			ahrs_src_frame_id = ahrs_out_frame_id;
 		}
 	}
+}
+
+void NavPosMgr::startNewDataFile()
+{
+	if (nullptr != data_fd)
+	{
+		fclose(data_fd);
+		data_fd = nullptr;
+	}
+	// Build the filename
+	const std::string display_name = _display_name;
+	// Easiest way to convert double to iso timestamp is via ROS and the save_data_mgr
+	const std::string tstamp_str = save_data_if->getTimestampString();
+	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
+											display_name + "_nav_" + tstamp_str + ".yaml";
+	// Now create the file -- need to do this as a low-level open() call to set the permissions
+	int fh = open(qualified_filename.c_str(), O_WRONLY | O_CREAT, 0664);
+	if (fh < 0)
+	{
+		ROS_ERROR("Unable to create file %s for saving nav/pos data", qualified_filename.c_str());
+		return;
+	}
+
+	// Now open it as a stream
+	data_fd = fdopen(fh, "w");
+	if (data_fd == nullptr)
+	{
+		ROS_ERROR("Unable to open file stream for saving nav/pos data");
+		return;
+	}
+
+	// Now print the header info
+	// First, the current AHRS transform
+	ros::Time latest(0.0);
+	const std::string src_frame = ahrs_src_frame_id;
+	const std::string target_frame = ahrs_out_frame_id;
+	tf::StampedTransform transform;
+	transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
+	geometry_msgs::TransformStamped transform_msg;
+	tf::transformStampedTFToMsg(transform, transform_msg);
+
+	fprintf(data_fd, "# Nav/Pose Data File\n");
+	fprintf(data_fd, "start_time: %s\n", tstamp_str.c_str());
+	fprintf(data_fd, "transform:\n");
+	fprintf(data_fd, "  source_frame_id: %s\n", transform_msg.header.frame_id.c_str());
+	fprintf(data_fd, "  target_frame_id: %s\n", transform_msg.child_frame_id.c_str());
+	fprintf(data_fd, "  # Translation in meters\n");
+	fprintf(data_fd, "  translation:\n");
+	fprintf(data_fd, "    x: %f\n", transform_msg.transform.translation.x);
+	fprintf(data_fd, "    y: %f\n", transform_msg.transform.translation.y);
+	fprintf(data_fd, "    z: %f\n", transform_msg.transform.translation.z);
+	fprintf(data_fd, "  #Rotation Quaternion\n");
+	fprintf(data_fd, "  rotation:\n");
+	fprintf(data_fd, "    x: %f\n", transform_msg.transform.rotation.x);
+	fprintf(data_fd, "    y: %f\n", transform_msg.transform.rotation.y);
+	fprintf(data_fd, "    z: %f\n", transform_msg.transform.rotation.z);
+	fprintf(data_fd, "    w: %f\n", transform_msg.transform.rotation.w);
+	fprintf(data_fd, "entries:\n");
+	fflush(data_fd);
+
+	need_new_data_file = false;
 }
 
 } // namespace Numurus

@@ -70,6 +70,9 @@ private:
 	tf::TransformListener transform_listener;
 	tf2_ros::StaticTransformBroadcaster static_transform_broadcaster;
 
+	bool need_new_data_file = true;
+	FILE *data_fd = nullptr;
+
 	/**
 	 * @brief      Provide the (interpolated) NavPos response for the requested timestamp
 	 *
@@ -115,6 +118,8 @@ private:
 	bool transformAHRSData(AHRSDataSet &ahrs_data);
 
 	void setupAHRSOffsetFrame();
+
+	void startNewDataFile();
 
 }; // class NavPosTimeMgr
 } // namespace Numurus
