@@ -23,7 +23,7 @@
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(angle_rad) ((angle_rad) * 180.0f / M_PI)
 
-#define OFFSETS_SET_FRAME_ID		"3dx_ahrs_frame"
+#define OFFSETS_SET_FRAME_ID		"manual_offset_frame"
 
 namespace Numurus
 {
@@ -179,12 +179,16 @@ void NavPosMgr::initSubscribers()
 	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
 	subscribers.push_back(n_priv.subscribe("set_heading_override", 3, &NavPosMgr::setHeadingOverrideHandler, this));
 	subscribers.push_back(n_priv.subscribe("clear_heading_override", 3, &NavPosMgr::clearHeadingOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_attitude_override", 3, &NavPosMgr::setAttitudeOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("clear_attitude_override", 3, &NavPosMgr::clearAttitudeOverrideHandler, this));
 
 	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPosMgr::setIMUTopic, this));
 	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPosMgr::setOdomTopic, this));
 
 	subscribers.push_back(n_priv.subscribe("set_ahrs_src_frame", 3, &NavPosMgr::setAHRSSourceFrameHandler, this));
 	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPosMgr::setAHRSOutputFrameHandler, this));
+
+	subscribers.push_back(n_priv.subscribe("set_ahrs_offset", 3, &NavPosMgr::setAHRSOffsetHandler, this));
 }
 
 bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
@@ -330,6 +334,35 @@ void NavPosMgr::clearHeadingOverrideHandler(const std_msgs::Empty::ConstPtr &msg
 	ahrs->clearHeadingOverride();
 }
 
+void NavPosMgr::setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg)
+{
+	// Need to map into configured AHRS frame, so it looks like it came from standard AHRS
+	const std::string out_frame = ahrs_out_frame_id;
+	const std::string src_frame = msg.header.frame_id;
+	if (false == transform_listener.frameExists(src_frame))
+	{
+		ROS_ERROR("Attitude override has invalid frame id: %s... override not applied", src_frame.c_str());
+		return;
+	}
+
+	geometry_msgs::QuaternionStamped quat_out;
+	try
+	{
+		transform_listener.transformQuaternion(ahrs_out_frame_id, msg, quat_out);
+	}
+	catch (tf2::TransformException &ex)
+	{
+		ROS_WARN_THROTTLE(1.0, "%s", ex.what());
+	}
+
+	ahrs->overrideOrientationData(quat_out.quaternion.w, quat_out.quaternion.x, quat_out.quaternion.y, quat_out.quaternion.z);
+}
+
+void NavPosMgr::clearAttitudeOverrideHandler(const std_msgs::Empty::ConstPtr &msg)
+{
+	ahrs->clearOrientationOverride();
+}
+
 void NavPosMgr::ensureAHRSTypeROS()
 {
 	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
@@ -394,6 +427,20 @@ void NavPosMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
 		return;
 	}
 	ahrs_out_frame_id = output_frame; // TODO: Thread safety?
+}
+
+void NavPosMgr::setAHRSOffsetHandler(const num_sdk_msgs::Offset::ConstPtr &msg)
+{
+	ahrs_offsets_set = true;
+	ahrs_x_offset_m = msg->translation.x;
+	ahrs_y_offset_m = msg->translation.y;
+	ahrs_z_offset_m = msg->translation.z;
+
+	ahrs_x_rot_offset_deg = msg->rotation.x;
+	ahrs_y_rot_offset_deg = msg->rotation.y;
+	ahrs_z_rot_offset_deg = msg->rotation.z;
+
+	setupAHRSOffsetFrame();
 }
 
 
@@ -620,6 +667,7 @@ bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
 
 			// Heading
 			// TODO: Maybe transformation of heading should be configurable?
+			/*
 			if (ahrs_data.heading_valid)
 			{
 				// Make a vector out of the heading and transform it
@@ -633,6 +681,7 @@ bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
 				// TODO: How do we know which dimension of the new frame is 'forward'???
 				ahrs_data.heading = RAD_TO_DEG(atan2(vect3_out.vector.x, vect3_out.vector.y));
 			}
+			*/
 			// If we get this far, set the exit condition
 			transformed = true;
 		}

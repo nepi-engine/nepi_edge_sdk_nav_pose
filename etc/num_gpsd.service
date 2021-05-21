@@ -1,0 +1,13 @@
+[Unit]
+Description=Numurus GPSD Launch
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+ExecStart=/opt/numurus/ros/lib/num_sdk_nav_pos_mgr/gpsd -S 3322 udp://0.0.0.0:29470
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

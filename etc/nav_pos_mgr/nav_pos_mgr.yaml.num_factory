@@ -6,11 +6,11 @@ imu_topic: 3dx_device/stereo_cam_driver/imu/data       # IMU topic w.r.t. base n
 odom_topic: 3dx_device/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for ahrs_type == "ros"
 save_data_continuous: false                            # true ==> Every change to a configurable parameters is saved to file
 save_data_raw: false                                   # No effect for this node. No raw data defined
-ahrs_offset:                                           # Transform parameters for ahrs/imu source
-  offsets_set:      false                              # If true, a new source frame will be constructed for AHRS/IMU data as provided by 6-DOF offsets
-  x_m:              0.0                                # x-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
-  y_m:              0.0                                # y-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
-  z_m:              0.0                                # x-axis translation in meteres from ahrs_out_frame_id to AHRS/IMU coordinate frame
+ahrs_offset:                                           # Transform parameters for ahrs/imu source 
+  offsets_set:      true                               # If true, a new source frame will be constructed for AHRS/IMU data as provided by 6-DOF offsets
+  x_m:              0.0                                # x-axis translation in meters from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  y_m:              0.0                                # y-axis translation in meters from ahrs_out_frame_id to AHRS/IMU coordinate frame
+  z_m:              0.0                                # x-axis translation in meters from ahrs_out_frame_id to AHRS/IMU coordinate frame
   x_rot_deg:        0.0                                # x-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
   y_rot_deg:        0.0                                # y-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
   z_rot_deg:        0.0                                # z-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame

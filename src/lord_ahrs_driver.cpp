@@ -1627,11 +1627,22 @@ void LORDAHRSDriver::mergeAHRSData(const LORDAHRSIMUData &imu_data_in, const LOR
   merged_out.angular_velocity_valid = est_filt_data_in.angular_rate.valid;
 
   // Orientation
-  merged_out.orientation_q0 = est_filt_data_in.quaternion.q0;
-  merged_out.orientation_q1_i = est_filt_data_in.quaternion.q1_i;
-  merged_out.orientation_q2_j = est_filt_data_in.quaternion.q2_j;
-  merged_out.orientation_q3_k = est_filt_data_in.quaternion.q3_k;
-  merged_out.orientation_valid = est_filt_data_in.quaternion.valid;
+  if (true == orientation_override)
+  {
+    merged_out.orientation_q0 = orientation_override_q0;
+    merged_out.orientation_q1_i = orientation_override_q1_i;
+    merged_out.orientation_q2_j = orientation_override_q2_j;
+    merged_out.orientation_q3_k = orientation_override_q3_k;
+    merged_out.orientation_valid = true;
+  }
+  else
+  {
+    merged_out.orientation_q0 = est_filt_data_in.quaternion.q0;
+    merged_out.orientation_q1_i = est_filt_data_in.quaternion.q1_i;
+    merged_out.orientation_q2_j = est_filt_data_in.quaternion.q2_j;
+    merged_out.orientation_q3_k = est_filt_data_in.quaternion.q3_k;
+    merged_out.orientation_valid = est_filt_data_in.quaternion.valid;
+  }
 
   // Heading
   if (true == heading_override)

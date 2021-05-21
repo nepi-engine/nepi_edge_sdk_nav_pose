@@ -146,12 +146,21 @@ public:
                            const AHRSRollPitchYaw &sensor_to_vehicle) {return true;}
   virtual inline bool updateSystemTime(uint32_t posix_time){return true;}
   virtual inline bool updateReferencePosition(const AHRSReferencePosition &pos){return true;}
-  virtual void overrideHeadingData(float heading_deg, bool heading_true_north) {
+  virtual inline void overrideHeadingData(float heading_deg, bool heading_true_north) {
     heading_override = true;
     heading_override_deg = heading_deg;
     heading_override_true_north = heading_true_north;
   }
   virtual inline void clearHeadingOverride(){heading_override = false;}
+
+  virtual inline void overrideOrientationData(float q0, float q1_i, float q2_j, float q3_k) {
+    orientation_override = true;
+    orientation_override_q0 = q0;
+    orientation_override_q1_i = q1_i;
+    orientation_override_q2_j = q2_j;
+    orientation_override_q3_k = q3_k;
+  }
+  virtual inline void clearOrientationOverride(){orientation_override = false;}
 
    // Subclasses MUST implement
   virtual bool receiveLatestData(AHRSDataSet &data_out) = 0;
@@ -160,6 +169,12 @@ protected:
   bool heading_override = false;
   float heading_override_deg = 0.0f;
   bool heading_override_true_north = true;
+
+  bool orientation_override = true;
+  float orientation_override_q0 = 1.0f;
+  float orientation_override_q1_i = 0.0f;
+  float orientation_override_q2_j = 0.0f;
+  float orientation_override_q3_k = 0.0f;
 }; // class AHRSDriver
 
 } // namespance Numurus

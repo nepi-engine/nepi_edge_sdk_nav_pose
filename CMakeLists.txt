@@ -143,6 +143,31 @@ target_link_libraries(nav_pos_mgr_node
   ${catkin_LIBRARIES}
 )
 
+add_executable(gpsd_ros_client_node
+  src/gpsd_ros_client.cpp)
+
+add_dependencies(gpsd_ros_client_node ${catkin_EXPORTED_TARGETS} num_gpsd)
+
+target_include_directories(gpsd_ros_client_node PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd/include
+)
+
+target_link_libraries(gpsd_ros_client_node
+  ${catkin_LIBRARIES}
+  ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd/gpsd-3.22.1~dev/libgps.so
+)
+
+# Rule to build gpsd, including client library libgps.so
+#add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd/gpsd-3.22.1~dev/libgps.so
+#  COMMAND scons
+#  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd
+#  COMMENT "Building special Numurus version of GPSD and libgps.so"
+#)
+add_custom_target(num_gpsd ALL
+  COMMAND scons # Build command for full gpsd project
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd
+  COMMENT "Building special Numurus version of GPSD and libgps.so"
+)
 
 #############
 ## Install ##
@@ -165,6 +190,7 @@ catkin_install_python(PROGRAMS
 ## Mark executables and/or libraries for installation
 install(TARGETS
   nav_pos_mgr_node
+  gpsd_ros_client_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -185,11 +211,19 @@ install(DIRECTORY include/
 )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-#  install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+# GPSD Client Library
+install(FILES
+  num_gpsd/gpsd-3.22.1~dev/libgps.so
+  num_gpsd/gpsd-3.22.1~dev/libgps.so.28
+  num_gpsd/gpsd-3.22.1~dev/libgps.so.28.0.0
+  DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+)
+
+# GPSD Server Application
+install(PROGRAMS
+  num_gpsd/gpsd-3.22.1~dev/gpsd/gpsd
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 # Install etc files (startup scripts, factory configs, etc.) to the global (not project) etc destination
 install(DIRECTORY etc/

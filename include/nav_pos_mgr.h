@@ -10,6 +10,7 @@
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "std_msgs/Empty.h"
 #include "sensor_msgs/NavSatFix.h"
+#include "num_sdk_msgs/Offset.h"
 #include "num_sdk_msgs/Heading.h"
 
 #include "sdk_node.h"
@@ -100,12 +101,16 @@ private:
 	void setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
 	void setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg);
 	void clearHeadingOverrideHandler(const std_msgs::Empty::ConstPtr &msg);
+	void setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg);
+	void clearAttitudeOverrideHandler(const std_msgs::Empty::ConstPtr &msg);
 
 	void setIMUTopic(const std_msgs::String::ConstPtr &msg);
 	void setOdomTopic(const std_msgs::String::ConstPtr &msg);
 
 	void setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg);
 	void setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg);
+
+	void setAHRSOffsetHandler(const num_sdk_msgs::Offset::ConstPtr &msg);
 
 	void serviceAHRS();
 

@@ -73,18 +73,30 @@ void ROSAHRSDriver::callbackIMUAndOdom(const sensor_msgs::ImuConstPtr& imu_msg, 
   latest_ahrs.angular_velocity_z = imu_msg->angular_velocity.z;
   latest_ahrs.angular_velocity_valid = true;
 
-  // Orientation (quaterion) w.r.t. fixed-earth coordinate frame
+  // Orientation (quaterion) 
   /*
   latest_ahrs.orientation_q0 = odom_msg->pose.pose.orientation.w;
   latest_ahrs.orientation_q1_i = odom_msg->pose.pose.orientation.x;
   latest_ahrs.orientation_q2_j = odom_msg->pose.pose.orientation.y;
   latest_ahrs.orientation_q3_k = odom_msg->pose.pose.orientation.z;
   */
-  latest_ahrs.orientation_q0 = imu_msg->orientation.w;
-  latest_ahrs.orientation_q1_i = imu_msg->orientation.x;
-  latest_ahrs.orientation_q2_j = imu_msg->orientation.y;
-  latest_ahrs.orientation_q3_k = imu_msg->orientation.z;
-  latest_ahrs.orientation_valid = true;
+  if (true == orientation_override)
+  {
+    latest_ahrs.orientation_q0 = orientation_override_q0;
+    latest_ahrs.orientation_q1_i = orientation_override_q1_i;
+    latest_ahrs.orientation_q2_j = orientation_override_q2_j;
+    latest_ahrs.orientation_q3_k = orientation_override_q3_k;
+    latest_ahrs.orientation_valid = true;
+  }
+
+  else
+  {
+    latest_ahrs.orientation_q0 = imu_msg->orientation.w;
+    latest_ahrs.orientation_q1_i = imu_msg->orientation.x;
+    latest_ahrs.orientation_q2_j = imu_msg->orientation.y;
+    latest_ahrs.orientation_q3_k = imu_msg->orientation.z;
+    latest_ahrs.orientation_valid = true;
+  }
 
   // Heading (deg)
   if (true == heading_override)

@@ -1,0 +1,3 @@
+[submodule "num_gpsd"]
+	path = num_gpsd
+	url = git@bitbucket.org:numurus/num_gpsd.git
