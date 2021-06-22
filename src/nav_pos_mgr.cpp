@@ -319,7 +319,7 @@ void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 
 void NavPosMgr::setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg)
 {
-	if (msg->heading < 0.0 || msg->heading >= 360.0)
+	if (msg->heading <= -360.0 || msg->heading >= 360.0)
 	{
 		ROS_ERROR("Invalid heading override: %f deg... ignoring", msg->heading);
 	}
