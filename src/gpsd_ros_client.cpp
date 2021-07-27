@@ -21,6 +21,9 @@ static constexpr auto SERVICE_ONCE_BLOCK_TIME{100000}; // 100ms
 
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
 
+#define NAV_SAT_FIX_MSG_NO_FIX  -1 // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_NO_FIX because it conflicts with GPSD #define
+#define NAV_SAT_FIX_MSG_FIX     0 // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_FIX because it conflicts with GPSD #define
+
 namespace Numurus
 {
 
@@ -105,11 +108,11 @@ static int8_t gpsdFixStatusToRosFixStatus(int gpsd_fix_status)
 {
   if ((STATUS_NO_FIX == gpsd_fix_status) || (STATUS_TIME == gpsd_fix_status))
   {
-    return -1; // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_NO_FIX because it conflicts with GPSD #define
+    return NAV_SAT_FIX_MSG_NO_FIX; // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_NO_FIX because it conflicts with GPSD #define
   }
 
   // Just assign STATUS_FIX to everything else -- no obvious mapping here
-  return 0; // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_FIX because it conflicts with GPSD #define
+  return NAV_SAT_FIX_MSG_FIX; // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_FIX because it conflicts with GPSD #define
 }
 
 void GPSDRosClient::serviceGPSDOnce()
@@ -147,21 +150,28 @@ void GPSDRosClient::serviceGPSDOnce()
       nav_sat_fix_msg.header.stamp = ros::Time::now();
     }
 
-    nav_sat_fix_msg.status.status = gpsdFixStatusToRosFixStatus(gpsd_data->fix.status);
+    // gpsd_data->fix.status is not properly set by server -- see gpsd_json.c:223 for a cryptic comment
+    // As a result, the default value of -1 (STATUS_NO_FIX) is applied by client library (libgps_json.c:108),
+    // so the following line doesn't work -- instead, we will derive the fix status from the LATLON_SET field
+    //nav_sat_fix_msg.status.status = gpsdFixStatusToRosFixStatus(gpsd_data->fix.status);
+    // ROS_ERROR("Debugging: gpsd_data->fix.status = %d, fix_msg.status.status = %d", gpsd_data->fix.status, nav_sat_fix_msg.status.status);
     // No way to get the service (GPS, GLONASS, etc.) from gpsd as far as I can tell, so just hard-code it as GPS for now
     nav_sat_fix_msg.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
 
+    nav_sat_fix_msg.status.status = NAV_SAT_FIX_MSG_NO_FIX; // Will promote below if appropriate
     if (gpsd_data->set & LATLON_SET)
     {
       //ROS_WARN("Debug - Got lat/lon: [%f, %f]", gpsd_data->fix.latitude, gpsd_data->fix.longitude);
       nav_sat_fix_msg.latitude = gpsd_data->fix.latitude;
       nav_sat_fix_msg.longitude = gpsd_data->fix.longitude;
+      nav_sat_fix_msg.status.status = NAV_SAT_FIX_MSG_FIX; // See comment above
     }
 
     if (gpsd_data->set & ALTITUDE_SET)
     {
       //ROS_WARN("Debug - Got altitude: %f", gpsd_data->fix.altHAE);
       nav_sat_fix_msg.altitude = gpsd_data->fix.altHAE;
+      nav_sat_fix_msg.status.status = NAV_SAT_FIX_MSG_FIX; // See comment above
     }
 
     gps_fix_pub.publish(nav_sat_fix_msg);
