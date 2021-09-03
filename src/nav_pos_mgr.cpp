@@ -742,10 +742,8 @@ void NavPosMgr::startNewDataFile()
 	}
 	// Build the filename
 	const std::string display_name = _display_name;
-	// Easiest way to convert double to iso timestamp is via ROS and the save_data_mgr
 	const std::string tstamp_str = save_data_if->getTimestampString();
-	const std::string qualified_filename = save_data_if->_save_data_dir + "/" + save_data_if->getFilenamePrefix() +
-											display_name + "_nav_" + tstamp_str + ".yaml";
+	const std::string qualified_filename = save_data_if->getFullPathFilename(tstamp_str, display_name + "_nav", "yaml");
 	// Now create the file -- need to do this as a low-level open() call to set the permissions
 	int fh = open(qualified_filename.c_str(), O_WRONLY | O_CREAT, 0664);
 	if (fh < 0)
