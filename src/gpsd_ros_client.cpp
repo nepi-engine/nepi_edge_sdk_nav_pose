@@ -104,6 +104,7 @@ void GPSDRosClient::initPublishers()
   gps_stream_pub = n.advertise<std_msgs::String>("gps_status_stream", 3);
 }
 
+/*
 static int8_t gpsdFixStatusToRosFixStatus(int gpsd_fix_status)
 {
   if ((STATUS_NO_FIX == gpsd_fix_status) || (STATUS_TIME == gpsd_fix_status))
@@ -114,6 +115,7 @@ static int8_t gpsdFixStatusToRosFixStatus(int gpsd_fix_status)
   // Just assign STATUS_FIX to everything else -- no obvious mapping here
   return NAV_SAT_FIX_MSG_FIX; // Can't use symbolic sensor_msgs::NavSatStatus::STATUS_FIX because it conflicts with GPSD #define
 }
+*/
 
 void GPSDRosClient::serviceGPSDOnce()
 {
