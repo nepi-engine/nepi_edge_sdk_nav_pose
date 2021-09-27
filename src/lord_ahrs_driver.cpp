@@ -1669,3 +1669,32 @@ void LORDAHRSDriver::mergeAHRSData(const LORDAHRSIMUData &imu_data_in, const LOR
   }
 }
 } //namespace Numurus
+
+#ifdef LORD_AHRS_TEST_APP
+int main(int argc, char** argv)
+{
+  // argv[1] = TTY device, e.g. ttyUL0 on Zynq
+  // argv[2] = AHRS device update rate
+  const float update_rate_hz = atof(argv[2]);
+  const Numurus::AHRSRollPitchYaw rpy_rad(0.0, 0.0, 0.0);
+  Numurus::LORDAHRSDriver drv;
+  const std::time_t now_s = std::time(0);
+  if (false == drv.init(argv[1], update_rate_hz, now_s, rpy_rad))
+  {
+    printf("Failed to initialize Lord AHRS... exiting\n");
+    return -1;
+  }
+
+  drv.clearOrientationOverride();
+
+  while(true)
+  {
+    Numurus::AHRSDataSet data;
+    drv.receiveLatestData(data);
+    data.printYAML();
+    sleep(1);
+  }
+
+  return 0;
+}
+#endif
