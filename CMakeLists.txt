@@ -128,25 +128,16 @@ include_directories(
 ## either from message generation or dynamic reconfigure
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_library(${PROJECT_NAME}
-  src/ahrs_driver.cpp
-  src/lord_ahrs_driver.cpp
-  src/ros_ahrs_driver.cpp
-)
-
 ## Nav/Pos Mgr Node
 add_executable(nav_pos_mgr_node
   src/nav_pos_mgr.cpp
 )
 
 add_dependencies(nav_pos_mgr_node
-  ${catkin_EXPORTED_TARGETS}
-  ${PROJECT_NAME})
+  ${catkin_EXPORTED_TARGETS})
 
 target_link_libraries(nav_pos_mgr_node
-  ${catkin_LIBRARIES}
-  ${PROJECT_NAME}
-)
+  ${catkin_LIBRARIES})
 
 ## GPSD ROS Client Node
 add_executable(gpsd_ros_client_node
@@ -163,19 +154,6 @@ target_include_directories(gpsd_ros_client_node PUBLIC
 target_link_libraries(gpsd_ros_client_node
   ${catkin_LIBRARIES}
   ${CMAKE_CURRENT_SOURCE_DIR}/num_gpsd/gpsd-3.22.1~dev/libgps.so
-)
-
-## Lord AHRS ROS Wrapper Node
-add_executable(lord_ahrs_ros_wrapper
-  src/lord_ahrs_ros_wrapper)
-
-add_dependencies(lord_ahrs_ros_wrapper
-  ${catkin_EXPORTED_TARGETS}
-  ${PROJECT_NAME})
-
-target_link_libraries(lord_ahrs_ros_wrapper
-  ${catkin_LIBRARIES}
-  ${PROJECT_NAME}
 )
 
 # Rule to build gpsd, including client library libgps.so
