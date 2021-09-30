@@ -15,7 +15,7 @@
 
 #include "sdk_node.h"
 //#include "lord_ahrs_driver.h"
-#include "ahrs_driver.h"
+#include "drivers/generic_ahrs/ahrs_driver.h"
 #include "num_sdk_msgs/NavPosQuery.h"
 #include "num_sdk_msgs/NavPosStatusQuery.h"
 

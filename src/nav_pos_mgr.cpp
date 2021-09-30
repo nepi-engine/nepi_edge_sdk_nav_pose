@@ -9,8 +9,8 @@
 #include "tf2/LinearMath/Quaternion.h"
 
 #include "nav_pos_mgr.h"
-#include "lord_ahrs_driver.h"
-#include "ros_ahrs_driver.h"
+#include "drivers/generic_ahrs/lord_ahrs_driver.h"
+#include "drivers/generic_ahrs/ros_ahrs_driver.h"
 #include "save_data_interface.h"
 
 #define NODE_NAME	"nav_pos_mgr"

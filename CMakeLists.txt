@@ -188,10 +188,8 @@ catkin_install_python(PROGRAMS
 
 ## Mark executables and/or libraries for installation
 install(TARGETS
-  ${PROJECT_NAME}
   nav_pos_mgr_node
   gpsd_ros_client_node
-  lord_ahrs_ros_wrapper
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
