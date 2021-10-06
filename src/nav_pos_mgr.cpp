@@ -57,8 +57,8 @@ NavPosMgr::NavPosMgr() :
 	ahrs_y_rot_offset_deg{"ahrs_offset/y_rot_deg", 0.0f, this},
 	ahrs_z_rot_offset_deg{"ahrs_offset/z_rot_deg", 0.0f, this},
 	ahrs_type{"ahrs_type", AHRS_TYPE_ROS, this}, // Better default?
-	imu_topic{"imu_topic", "3dx_device/stereo_cam_driver/imu/data", this}, // Better default?
-	odom_topic{"odom_topic", "3dx_device/stereo_cam_driver/odom", this}, // Better default?
+	imu_topic{"imu_topic", "sensor_3dx/stereo_cam_driver/imu/data", this}, // Better default?
+	odom_topic{"odom_topic", "sensor_3dx/stereo_cam_driver/odom", this}, // Better default?
 	ahrs_src_frame_id{"ahrs_src_frame_id", "stereo_cam_imu_link", this},
 	ahrs_out_frame_id{"ahrs_out_frame_id", "3dx_center_frame", this},
 	ahrs_ready{false},
