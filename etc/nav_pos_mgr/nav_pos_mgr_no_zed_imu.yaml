@@ -1,0 +1,3 @@
+imu_topic: imu/data       # IMU topic w.r.t. base namespace for ahrs_type == "ros" -- overrides default to avoid linking to Zed
+odom_topic: odom          # Odometry topic w.r.t. base namespace for ahrs_type == "ros" -- overrides default to avoid linking to Zed
+ahrs_src_frame_id: '3dx_center_frame'
