@@ -6,7 +6,7 @@ imu_topic: sensor_3dx/stereo_cam_driver/imu/data       # IMU topic w.r.t. base n
 odom_topic: sensor_3dx/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for ahrs_type == "ros"
 save_data_continuous: false                            # true ==> Every change to a configurable parameters is saved to file
 save_data_raw: false                                   # No effect for this node. No raw data defined
-ahrs_offset:                                           # Transform parameters for ahrs/imu source 
+ahrs_offset:                                           # Transform parameters for ahrs/imu source
   offsets_set:      true                               # If true, a new source frame will be constructed for AHRS/IMU data as provided by 6-DOF offsets
   x_m:              0.0                                # x-axis translation in meters from ahrs_out_frame_id to AHRS/IMU coordinate frame
   y_m:              0.0                                # y-axis translation in meters from ahrs_out_frame_id to AHRS/IMU coordinate frame
@@ -16,3 +16,16 @@ ahrs_offset:                                           # Transform parameters fo
   z_rot_deg:        0.0                                # z-axis rotation in degrees from ahrs_out_frame_id to AHRS/IMU coordinate frame
 ahrs_src_frame_id: 'stereo_cam_imu_link'               # TF name for AHRS/IMU data source (only applicable if ahrs_offset/offsets_set is false)
 ahrs_out_frame_id: '3dx_center_frame'                  # TF into which AHRS/IMU data should be transformed
+fixed_data:                                            # Settings for fixed (non-updating) GPS, attitude, and heading
+  lat_lon_alt_is_fixed: false                          # True if GPS position is fixed
+  fixed_lat_deg:        0.0                            # Fixed latitude in degrees (in effect only if lat_lon_alt_is_fixed is true)
+  fixed_lon_deg:        0.0                            # Fixed longitude in degrees (in effect only if lat_lon_alt_is_fixed is true)
+  fixed_alt_m_hae:      0.0                            # Fixed altitude in meters above ellipsoid (in effect only if lat_lon_alt_is_fixed is true)
+  orientation_is_fixed: false                          # True if orientation/attitude is fixed
+  fixed_orientation_x:  0.0                            # Fixed x (i) component of orientation quaternion w.r.t ahrs_out_frame_id
+  fixed_orientation_y:  0.0                            # Fixed y (j) component of orientation quaternion w.r.t ahrs_out_frame_id
+  fixed_orientation_z:  0.0                            # Fixed z (k) component of orientation quaternion w.r.t ahrs_out_frame_id
+  fixed_orientation_w:  1.0                            # Fixed w (scalar) component of orientation quaternion w.r.t ahrs_out_frame_id
+  heading_is_fixed:     false                          # True if heading is fixed
+  fixed_heading_deg:    0.0                            # Fixed heading in degrees
+  fixed_heading_is_true_north: true                    # True if fixed_heading_deg represents a true north heading, false for magnetic north heading
