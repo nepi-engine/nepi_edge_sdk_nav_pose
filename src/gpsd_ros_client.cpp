@@ -5,7 +5,7 @@
 #include "std_msgs/String.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "geometry_msgs/QuaternionStamped.h"
-#include "num_sdk_msgs/Heading.h"
+#include "nepi_ros_interfaces/Heading.h"
 
 // Important that this one comes after sensor_msgs/NavSatFix.h because
 // they have conflicting definitions for STATUS_NO_FIX
@@ -99,8 +99,8 @@ void GPSDRosClient::retrieveParams()
 void GPSDRosClient::initPublishers()
 {
   gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("set_gps_fix", 3);
-  heading_pub = n.advertise<num_sdk_msgs::Heading>("nav_pos_mgr/set_heading_override", 3);
-  attitude_pub = n.advertise<geometry_msgs::QuaternionStamped>("nav_pos_mgr/set_attitude_override", 3);
+  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("nav_pose_mgr/set_heading_override", 3);
+  attitude_pub = n.advertise<geometry_msgs::QuaternionStamped>("nav_pose_mgr/set_attitude_override", 3);
   gps_stream_pub = n.advertise<std_msgs::String>("gps_status_stream", 3);
 }
 
@@ -183,7 +183,7 @@ void GPSDRosClient::serviceGPSDOnce()
   if (gpsd_data->set & ATTITUDE_SET)
   {
     //ROS_WARN("Debug - Got heading: %f", gpsd_data->attitude.heading);
-    num_sdk_msgs::Heading heading_msg;
+    nepi_ros_interfaces::Heading heading_msg;
     heading_msg.heading = gpsd_data->attitude.heading;
     heading_msg.true_north = true;
     heading_pub.publish(heading_msg);

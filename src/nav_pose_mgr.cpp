@@ -8,12 +8,12 @@
 #include "geometry_msgs/TransformStamped.h"
 #include "tf2/LinearMath/Quaternion.h"
 
-#include "nav_pos_mgr.h"
+#include "nav_pose_mgr.h"
 #include "drivers/generic_ahrs/lord_ahrs_driver.h"
 #include "drivers/generic_ahrs/ros_ahrs_driver.h"
 #include "save_data_interface.h"
 
-#define NODE_NAME	"nav_pos_mgr"
+#define NODE_NAME	"nav_pose_mgr"
 
 #define MAX_NAV_POS_QUERY_DELAY	5.0 // TODO: Make this a configurable parameter?
 
@@ -46,7 +46,7 @@ static inline const char* navSatServiceToString(int8_t service)
 	return "UNKNOWN";
 }
 
-NavPosMgr::NavPosMgr() :
+NavPoseMgr::NavPoseMgr() :
 	ahrs_comm_device{"ahrs_comm_device", "", this}, // e.g., /dev/ttyUSB0 for LORD via USB
 	ahrs_update_rate_hz{"ahrs_update_rate_hz", 10.0f, this},
 	ahrs_offsets_set{"ahrs_offset/offsets_set", false, this},
@@ -90,10 +90,10 @@ NavPosMgr::NavPosMgr() :
 	latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
 
 	save_data_if = new SaveDataInterface(this, &n, &n_priv);
-	save_data_if->registerDataProduct("nav_pos");
+	save_data_if->registerDataProduct("nav_pose");
 }
 
-NavPosMgr::~NavPosMgr()
+NavPoseMgr::~NavPoseMgr()
 {
 	if (nullptr != ahrs_rcv_thread)
 	{
@@ -109,7 +109,7 @@ NavPosMgr::~NavPosMgr()
 	}
 }
 
-void NavPosMgr::init()
+void NavPoseMgr::init()
 {
 	SDKNode::init(); // call the base class method first
 
@@ -149,7 +149,7 @@ void NavPosMgr::init()
 	// Launch the AHRS receive thread
 	ahrs_rcv_continue = true;
 	ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
-	ahrs_rcv_thread = new std::thread(&NavPosMgr::serviceAHRS, this);
+	ahrs_rcv_thread = new std::thread(&NavPoseMgr::serviceAHRS, this);
 
 	// Set up for fixed nav/pose data is so configured
 	const bool use_fixed_gps = lat_lon_alt_is_fixed;
@@ -179,7 +179,7 @@ void NavPosMgr::init()
 	}
 }
 
-void NavPosMgr::retrieveParams()
+void NavPoseMgr::retrieveParams()
 {
 	SDKNode::retrieveParams();
 	ahrs_comm_device.retrieve();
@@ -212,39 +212,39 @@ void NavPosMgr::retrieveParams()
 	setupAHRSOffsetFrame();
 }
 
-void NavPosMgr::initServices()
+void NavPoseMgr::initServices()
 {
 	// Call the base method
 	SDKNode::initServices();
 
 	// Advertise trigger status query service
-	servicers.push_back(n.advertiseService("nav_pos_query", &Numurus::NavPosMgr::provideNavPos, this));
-	servicers.push_back(n.advertiseService("nav_pos_status_query", &Numurus::NavPosMgr::provideNavPosStatus, this));
+	servicers.push_back(n.advertiseService("nav_pose_query", &Numurus::NavPoseMgr::provideNavPose, this));
+	servicers.push_back(n.advertiseService("nav_pose_status_query", &Numurus::NavPoseMgr::provideNavPoseStatus, this));
 }
 
-void NavPosMgr::initSubscribers()
+void NavPoseMgr::initSubscribers()
 {
 	// Call the base method
 	SDKNode::initSubscribers();
 
-	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPosMgr::setGPSFixHandler, this));
-	subscribers.push_back(n.subscribe("set_gps_fix_override", 3, &NavPosMgr::setGPSFixOverrideHandler, this));
-	subscribers.push_back(n.subscribe("enable_gps_fix_override", 3, &NavPosMgr::enableGPSFixOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("enable_heading_override", 3, &NavPosMgr::enableHeadingOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("set_heading_override", 3, &NavPosMgr::setHeadingOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("enable_attitude_override", 3, &NavPosMgr::enableAttitudeOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("set_attitude_override", 3, &NavPosMgr::setAttitudeOverrideHandler, this));
+	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPoseMgr::setGPSFixHandler, this));
+	subscribers.push_back(n.subscribe("set_gps_fix_override", 3, &NavPoseMgr::setGPSFixOverrideHandler, this));
+	subscribers.push_back(n.subscribe("enable_gps_fix_override", 3, &NavPoseMgr::enableGPSFixOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("enable_heading_override", 3, &NavPoseMgr::enableHeadingOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_heading_override", 3, &NavPoseMgr::setHeadingOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("enable_attitude_override", 3, &NavPoseMgr::enableAttitudeOverrideHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_attitude_override", 3, &NavPoseMgr::setAttitudeOverrideHandler, this));
 
-	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPosMgr::setIMUTopic, this));
-	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPosMgr::setOdomTopic, this));
+	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPoseMgr::setIMUTopic, this));
+	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPoseMgr::setOdomTopic, this));
 
-	subscribers.push_back(n_priv.subscribe("set_ahrs_src_frame", 3, &NavPosMgr::setAHRSSourceFrameHandler, this));
-	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPosMgr::setAHRSOutputFrameHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_ahrs_src_frame", 3, &NavPoseMgr::setAHRSSourceFrameHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPoseMgr::setAHRSOutputFrameHandler, this));
 
-	subscribers.push_back(n_priv.subscribe("set_ahrs_offset", 3, &NavPosMgr::setAHRSOffsetHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_ahrs_offset", 3, &NavPoseMgr::setAHRSOffsetHandler, this));
 }
 
-bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp)
+bool NavPoseMgr::provideNavPose(nepi_ros_interfaces::NavPoseQuery::Request &req, nepi_ros_interfaces::NavPoseQuery::Response &resp)
 {
 	const bool latestDataRequested = (0.0 == req.query_time.toSec())? true : false;
 	if (false == latestDataRequested)
@@ -264,7 +264,7 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 	AHRSDataSet ahrs_data;
 	{
 		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-		//ROS_INFO("Debug: Servicing nav_pos request from %lu in the stack\n", ahrs_data_stack.size());
+		//ROS_INFO("Debug: Servicing nav_pose request from %lu in the stack\n", ahrs_data_stack.size());
 		if (ahrs_data_stack.size() > 0)
 		{
 			// TODO: Respect the requested data timestamp via zero-order hold, linear interpolation, etc.
@@ -298,57 +298,57 @@ bool NavPosMgr::provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_m
 
 	// TODO: Simulated and non-simulated control. For now, just use the returned data
 	// (will be zero'd if we failed)
-	resp.nav_pos.timestamp = ros::Time(ahrs_data.timestamp);
+	resp.nav_pose.timestamp = ros::Time(ahrs_data.timestamp);
 
 	// Copy in the latest position fix -- under mutex protection since this could be
 	// read by the driver thread concurrently.
 	{
 		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-		resp.nav_pos.fix = latest_nav_sat_fix;
+		resp.nav_pose.fix = latest_nav_sat_fix;
 	}
 
 	// accel
-	resp.nav_pos.accel.linear.x = ahrs_data.accel_x;
-	resp.nav_pos.accel.linear.y = ahrs_data.accel_y;
-	resp.nav_pos.accel.linear.z = ahrs_data.accel_z;
-	resp.nav_pos.accel.angular.x = 0.0; // No data source
-	resp.nav_pos.accel.angular.y = 0.0; // No data source
-	resp.nav_pos.accel.angular.z = 0.0; // No data source
+	resp.nav_pose.accel.linear.x = ahrs_data.accel_x;
+	resp.nav_pose.accel.linear.y = ahrs_data.accel_y;
+	resp.nav_pose.accel.linear.z = ahrs_data.accel_z;
+	resp.nav_pose.accel.angular.x = 0.0; // No data source
+	resp.nav_pose.accel.angular.y = 0.0; // No data source
+	resp.nav_pose.accel.angular.z = 0.0; // No data source
 
 	// linear velocity
-	resp.nav_pos.linear_velocity.x = ahrs_data.velocity_x;
-	resp.nav_pos.linear_velocity.y = ahrs_data.velocity_y;
-	resp.nav_pos.linear_velocity.z = ahrs_data.velocity_z;
+	resp.nav_pose.linear_velocity.x = ahrs_data.velocity_x;
+	resp.nav_pose.linear_velocity.y = ahrs_data.velocity_y;
+	resp.nav_pose.linear_velocity.z = ahrs_data.velocity_z;
 
 	// angular velocity -- force to zero is orientation is fixed
 	const bool force_angular_rates_zero = orientation_is_fixed;
 	if (false == force_angular_rates_zero)
 	{
-		resp.nav_pos.angular_velocity.x = ahrs_data.angular_velocity_x;
-		resp.nav_pos.angular_velocity.y = ahrs_data.angular_velocity_y;
-		resp.nav_pos.angular_velocity.z = ahrs_data.angular_velocity_z;
+		resp.nav_pose.angular_velocity.x = ahrs_data.angular_velocity_x;
+		resp.nav_pose.angular_velocity.y = ahrs_data.angular_velocity_y;
+		resp.nav_pose.angular_velocity.z = ahrs_data.angular_velocity_z;
 	}
 	else
 	{
-		resp.nav_pos.angular_velocity.x = 0.0f;
-		resp.nav_pos.angular_velocity.y = 0.0f;
-		resp.nav_pos.angular_velocity.z = 0.0f;
+		resp.nav_pose.angular_velocity.x = 0.0f;
+		resp.nav_pose.angular_velocity.y = 0.0f;
+		resp.nav_pose.angular_velocity.z = 0.0f;
 	}
 
 	// orientation
-	resp.nav_pos.orientation.x = ahrs_data.orientation_q1_i;
-	resp.nav_pos.orientation.y = ahrs_data.orientation_q2_j;
-	resp.nav_pos.orientation.z = ahrs_data.orientation_q3_k;
-	resp.nav_pos.orientation.w = ahrs_data.orientation_q0;
+	resp.nav_pose.orientation.x = ahrs_data.orientation_q1_i;
+	resp.nav_pose.orientation.y = ahrs_data.orientation_q2_j;
+	resp.nav_pose.orientation.z = ahrs_data.orientation_q3_k;
+	resp.nav_pose.orientation.w = ahrs_data.orientation_q0;
 
 	// heading
-	resp.nav_pos.heading = ahrs_data.heading;
-	resp.nav_pos.heading_true_north = ahrs_data.heading_true_north;
+	resp.nav_pose.heading = ahrs_data.heading;
+	resp.nav_pose.heading_true_north = ahrs_data.heading_true_north;
 
 	return true;
 }
 
-bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, num_sdk_msgs::NavPosStatusQuery::Response &resp)
+bool NavPoseMgr::provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::Request&, nepi_ros_interfaces::NavPoseStatusQuery::Response &resp)
 {
 	resp.status.lat_lon_alt_is_fixed = lat_lon_alt_is_fixed;
 
@@ -387,7 +387,7 @@ bool NavPosMgr::provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request&, n
 	return true;
 }
 
-void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
+void NavPoseMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 {
 	const bool gps_is_fixed = lat_lon_alt_is_fixed;
 	if (true == gps_is_fixed)
@@ -408,7 +408,7 @@ void NavPosMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 	}
 }
 
-void NavPosMgr::setGPSFixOverrideHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
+void NavPoseMgr::setGPSFixOverrideHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 {
 	fixed_lat_deg = msg->latitude;
 	fixed_lon_deg = msg->longitude;
@@ -421,7 +421,7 @@ void NavPosMgr::setGPSFixOverrideHandler(const sensor_msgs::NavSatFix::ConstPtr 
 	}
 }
 
-void NavPosMgr::enableGPSFixOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
+void NavPoseMgr::enableGPSFixOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
 {
 	lat_lon_alt_is_fixed = msg->data;
 
@@ -448,7 +448,7 @@ void NavPosMgr::enableGPSFixOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
 	}
 }
 
-void NavPosMgr::setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg)
+void NavPoseMgr::setHeadingOverrideHandler(const nepi_ros_interfaces::Heading::ConstPtr &msg)
 {
 	if (msg->heading <= -360.0 || msg->heading >= 360.0)
 	{
@@ -462,7 +462,7 @@ void NavPosMgr::setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr 
 	}
 }
 
-void NavPosMgr::enableHeadingOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
+void NavPoseMgr::enableHeadingOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
 {
 	heading_is_fixed = msg->data;
 	if (false == msg->data)
@@ -475,7 +475,7 @@ void NavPosMgr::enableHeadingOverrideHandler(const std_msgs::Bool::ConstPtr &msg
 	}
 }
 
-void NavPosMgr::enableAttitudeOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
+void NavPoseMgr::enableAttitudeOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
 {
 	orientation_is_fixed = msg->data;
 	if (false == msg->data)
@@ -496,7 +496,7 @@ void NavPosMgr::enableAttitudeOverrideHandler(const std_msgs::Bool::ConstPtr &ms
 	}
 }
 
-void NavPosMgr::setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg)
+void NavPoseMgr::setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg)
 {
 	// Need to map into configured AHRS frame, so it looks like it came from standard AHRS
 	const std::string out_frame = ahrs_out_frame_id;
@@ -524,7 +524,7 @@ void NavPosMgr::setAttitudeOverrideHandler(const geometry_msgs::QuaternionStampe
 	ahrs->overrideOrientationData(fixed_orientation_w, fixed_orientation_x, fixed_orientation_y, fixed_orientation_z);
 }
 
-void NavPosMgr::ensureAHRSTypeROS()
+void NavPoseMgr::ensureAHRSTypeROS()
 {
 	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
 	if (type != AHRS_TYPE_ROS)
@@ -543,7 +543,7 @@ void NavPosMgr::ensureAHRSTypeROS()
 	}
 }
 
-void NavPosMgr::setIMUTopic(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setIMUTopic(const std_msgs::String::ConstPtr &msg)
 {
 	{
 		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
@@ -553,7 +553,7 @@ void NavPosMgr::setIMUTopic(const std_msgs::String::ConstPtr &msg)
 	imu_topic = msg->data;
 }
 
-void NavPosMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
 {
 	{
 		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
@@ -563,7 +563,7 @@ void NavPosMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
 	odom_topic = msg->data;
 }
 
-void NavPosMgr::setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg)
 {
 	const std::string src_frame = msg->data;
 	if (false == transform_listener.frameExists(src_frame))
@@ -579,7 +579,7 @@ void NavPosMgr::setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg)
 
 }
 
-void NavPosMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
 {
 	const std::string output_frame = msg->data;
 	if (false == transform_listener.frameExists(output_frame))
@@ -590,7 +590,7 @@ void NavPosMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
 	ahrs_out_frame_id = output_frame; // TODO: Thread safety?
 }
 
-void NavPosMgr::setAHRSOffsetHandler(const num_sdk_msgs::Offset::ConstPtr &msg)
+void NavPoseMgr::setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPtr &msg)
 {
 	ahrs_offsets_set = true;
 	ahrs_x_offset_m = msg->translation.x;
@@ -605,7 +605,7 @@ void NavPosMgr::setAHRSOffsetHandler(const num_sdk_msgs::Offset::ConstPtr &msg)
 }
 
 
-void NavPosMgr::serviceAHRS()
+void NavPoseMgr::serviceAHRS()
 {
 	// Time update rate
 	const ros::Duration TIME_UPDATE_INTERVAL(1.0); // 1Hz
@@ -677,7 +677,7 @@ void NavPosMgr::serviceAHRS()
 	ROS_WARN("Terminating AHRS service thread");
 }
 
-bool NavPosMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
+bool NavPoseMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
 {
 	if ((AHRS_FILTER_STAT_RUN_VAL != ahrs_data.filter_state) ||
 			(false == ahrs_data.accel_valid) ||
@@ -690,7 +690,7 @@ bool NavPosMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
 	return true;
 }
 
-void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
+void NavPoseMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 {
 	// Good place to check if we need to close a previously open file due to
 	// data saving being disabled
@@ -702,7 +702,7 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 		return;
 	}
 
-	const bool needs_save = save_enabled && save_data_if->dataProductShouldSave("nav_pos");
+	const bool needs_save = save_enabled && save_data_if->dataProductShouldSave("nav_pose");
 	if (false == needs_save)
 	{
 		return;
@@ -747,7 +747,7 @@ void NavPosMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 	ahrs_data.printYAML(data_fd, "     ");
 }
 
-bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
+bool NavPoseMgr::transformAHRSData(AHRSDataSet &ahrs_data)
 {
 	geometry_msgs::Vector3Stamped vect3_in;
 	vect3_in.header.seq = 0;
@@ -859,7 +859,7 @@ bool NavPosMgr::transformAHRSData(AHRSDataSet &ahrs_data)
 	return (transformed && !timed_out);
 }
 
-void NavPosMgr::setupAHRSOffsetFrame()
+void NavPoseMgr::setupAHRSOffsetFrame()
 {
 	if (true == ahrs_offsets_set)
 	{
@@ -894,7 +894,7 @@ void NavPosMgr::setupAHRSOffsetFrame()
 	}
 }
 
-void NavPosMgr::startNewDataFile()
+void NavPoseMgr::startNewDataFile()
 {
 	if (nullptr != data_fd)
 	{
@@ -960,8 +960,8 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, NODE_NAME);
 	ROS_INFO("Starting the %s node", NODE_NAME);
 
-	Numurus::NavPosMgr nav_pos_mgr;
-	nav_pos_mgr.run();
+	Numurus::NavPoseMgr nav_pose_mgr;
+	nav_pose_mgr.run();
 
 	return 0;
 }

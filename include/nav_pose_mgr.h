@@ -11,14 +11,14 @@
 #include "std_msgs/Empty.h"
 #include "std_msgs/Bool.h"
 #include "sensor_msgs/NavSatFix.h"
-#include "num_sdk_msgs/Offset.h"
-#include "num_sdk_msgs/Heading.h"
+#include "nepi_ros_interfaces/Offset.h"
+#include "nepi_ros_interfaces/Heading.h"
 
 #include "sdk_node.h"
 //#include "lord_ahrs_driver.h"
 #include "drivers/generic_ahrs/ahrs_driver.h"
-#include "num_sdk_msgs/NavPosQuery.h"
-#include "num_sdk_msgs/NavPosStatusQuery.h"
+#include "nepi_ros_interfaces/NavPoseQuery.h"
+#include "nepi_ros_interfaces/NavPoseStatusQuery.h"
 
 namespace Numurus
 {
@@ -26,11 +26,11 @@ namespace Numurus
 class AHRSDriver;
 class SaveDataInterface;
 
-class NavPosMgr : public SDKNode
+class NavPoseMgr : public SDKNode
 {
 public:
-	NavPosMgr();
-	virtual ~NavPosMgr();
+	NavPoseMgr();
+	virtual ~NavPoseMgr();
 
 	// Inherited from SDKNode
 	void init() override;
@@ -88,35 +88,35 @@ private:
 	FILE *data_fd = nullptr;
 
 	/**
-	 * @brief      Provide the (interpolated) NavPos response for the requested timestamp
+	 * @brief      Provide the (interpolated) NavPose response for the requested timestamp
 	 *
-	 *			   This method serves as the callback for the nav_pos_query service
+	 *			   This method serves as the callback for the nav_pose_query service
 	 *
 	 * @param      req   The requested timestamp. Use 0 to indicate that the most recent fix is requested
-	 * @param      resp  The NavPos response.
+	 * @param      resp  The NavPose response.
 	 *
 	 * @return     true if successful, false otherwise
 	 */
-	bool provideNavPos(num_sdk_msgs::NavPosQuery::Request &req, num_sdk_msgs::NavPosQuery::Response &resp);
+	bool provideNavPose(nepi_ros_interfaces::NavPoseQuery::Request &req, nepi_ros_interfaces::NavPoseQuery::Response &resp);
 
 	/**
 	 * @brief      Provide status information about the nav/pos/time subsystem
 	 *
-	 *			   This method serves as the callback for the nav_pos_time_status service
+	 *			   This method serves as the callback for the nav_pose_time_status service
 	 *
 	 * @param      req   Empty
-	 * @param      resp  The response (NavPosStatus)
+	 * @param      resp  The response (NavPoseStatus)
 	 *
 	 * @return     true if successful, false otherwise
 	 */
-	bool provideNavPosStatus(num_sdk_msgs::NavPosStatusQuery::Request &req, num_sdk_msgs::NavPosStatusQuery::Response &resp);
+	bool provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::Request &req, nepi_ros_interfaces::NavPoseStatusQuery::Response &resp);
 
 	void setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
 	void enableGPSFixOverrideHandler(const std_msgs::Bool::ConstPtr &msg);
 	void setGPSFixOverrideHandler(const sensor_msgs::NavSatFix::ConstPtr &msg);
 
 	void enableHeadingOverrideHandler(const std_msgs::Bool::ConstPtr &msg);
-	void setHeadingOverrideHandler(const num_sdk_msgs::Heading::ConstPtr &msg);
+	void setHeadingOverrideHandler(const nepi_ros_interfaces::Heading::ConstPtr &msg);
 
 	void enableAttitudeOverrideHandler(const std_msgs::Bool::ConstPtr &msg);
 	void setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg);
@@ -127,7 +127,7 @@ private:
 	void setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg);
 	void setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg);
 
-	void setAHRSOffsetHandler(const num_sdk_msgs::Offset::ConstPtr &msg);
+	void setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPtr &msg);
 
 	void serviceAHRS();
 
@@ -143,6 +143,6 @@ private:
 
 	void startNewDataFile();
 
-}; // class NavPosTimeMgr
+}; // class NavPoseTimeMgr
 } // namespace Numurus
 #endif // NAV_POS_TIME_MGR

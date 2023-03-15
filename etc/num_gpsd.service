@@ -6,7 +6,7 @@ After=network.target
 Type=oneshot
 RemainAfterExit=yes
 User=root
-ExecStart=/opt/numurus/ros/lib/num_sdk_nav_pos_mgr/gpsd -S 3322 udp://0.0.0.0:29470
+ExecStart=/opt/nepi/ros/lib/nepi_edge_sdk_nav_pose/gpsd -S 3322 udp://0.0.0.0:29470
 Restart=no
 
 [Install]

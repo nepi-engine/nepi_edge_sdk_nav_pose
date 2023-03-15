@@ -1,5 +1,5 @@
 display_name: gpsd_ros_client
-gpsd_ip: localhost                                     # IP address/resolvable host of the GPSD instance (localhost for 3DX-provided GPSD server)
+gpsd_ip: localhost                                     # IP address/resolvable host of the GPSD instance (localhost for NEPI-provided GPSD server)
 gpsd_port: 3322                                        # GPSD server port (3322 for UDP-listening build, 2947 for standard hot-pluggable GPSD)
 gps_frame_id: manual_offset_frame                      # Transfer frame ID to report in set_gps_fix messages
 attitude_frame_id: manual_offset_frame                 # Transfer frame ID to report in set_attitude_override messages

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(num_sdk_nav_pos_mgr)
+project(nepi_edge_sdk_nav_pose)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
@@ -16,7 +16,7 @@ endif()
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp num_sdk_base num_sdk_msgs cv_bridge OpenCV pcl_ros pcl_conversions tf2_ros)
+find_package(catkin REQUIRED COMPONENTS roscpp nepi_edge_sdk_base nepi_ros_interfaces cv_bridge OpenCV pcl_ros pcl_conversions tf2_ros)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -107,7 +107,7 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
    INCLUDE_DIRS include
-   CATKIN_DEPENDS num_sdk_base num_sdk_msgs
+   CATKIN_DEPENDS nepi_edge_sdk_base nepi_ros_interfaces
 
 #  DEPENDS system_lib
 )
@@ -129,14 +129,14 @@ include_directories(
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Nav/Pos Mgr Node
-add_executable(nav_pos_mgr_node
-  src/nav_pos_mgr.cpp
+add_executable(nav_pose_mgr_node
+  src/nav_pose_mgr.cpp
 )
 
-add_dependencies(nav_pos_mgr_node
+add_dependencies(nav_pose_mgr_node
   ${catkin_EXPORTED_TARGETS})
 
-target_link_libraries(nav_pos_mgr_node
+target_link_libraries(nav_pose_mgr_node
   ${catkin_LIBRARIES})
 
 ## GPSD ROS Client Node
@@ -188,7 +188,7 @@ catkin_install_python(PROGRAMS
 
 ## Mark executables and/or libraries for installation
 install(TARGETS
-  nav_pos_mgr_node
+  nav_pose_mgr_node
   gpsd_ros_client_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

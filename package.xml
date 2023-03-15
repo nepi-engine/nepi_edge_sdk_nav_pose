@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>num_sdk_nav_pos_mgr</name>
+  <name>nepi_edge_sdk_nav_pose</name>
   <version>0.0.0</version>
-  <description>The Numurus SDK Navigation and Position package</description>
+  <description>The Numurus SDK Navigation and Pose/Position package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
@@ -50,8 +50,8 @@
   <!--   <doc_depend>doxygen</doc_depend> -->
   <depend>roscpp</depend>
   <depend>rospy</depend>
-  <depend>num_sdk_msgs</depend>
-  <depend>num_sdk_base</depend>
+  <depend>nepi_ros_interfaces</depend>
+  <depend>nepi_edge_sdk_base</depend>
   <depend>pcl_ros</depend>
   <depend>pcl_conversions</depend>
   <depend>tf2_ros</depend>

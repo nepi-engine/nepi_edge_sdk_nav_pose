@@ -1,7 +1,7 @@
 ahrs_comm_device: ''                                   # Serial device path, only applicable if mode == "lord"
 ahrs_type: ros                                         # "ros" ==> AHRS via IMU and Odometry messages, "lord" ==> AHRS via Lord serial interface
 ahrs_update_rate_hz: 10.0                              # Hardware update rate, only applicable if mode == "lord"
-display_name: nav_pos_mgr                              # User-friendly name for display purposes
+display_name: nav_pose_mgr                             # User-friendly name for display purposes
 imu_topic: sensor_3dx/stereo_cam_driver/imu/data       # IMU topic w.r.t. base namespace for ahrs_type == "ros"
 odom_topic: sensor_3dx/stereo_cam_driver/odom          # Odometry topic w.r.t. base namespace for ahrs_type == "ros"
 save_data_continuous: false                            # true ==> Every change to a configurable parameters is saved to file
