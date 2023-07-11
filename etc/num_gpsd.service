@@ -1,5 +1,5 @@
 [Unit]
-Description=Numurus GPSD Launch
+Description=NEPI GPSD Launch
 After=network.target
 
 [Service]
