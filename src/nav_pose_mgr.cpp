@@ -1,29 +1,28 @@
 #include <cstdlib>
 #include <cmath>
+#include <fcntl.h>
 
 #include <sys/stat.h>
-
+#include "std_msgs/Time.h"
 #include "geometry_msgs/Vector3Stamped.h"
 #include "geometry_msgs/QuaternionStamped.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "tf2/LinearMath/Quaternion.h"
 
 #include "nav_pose_mgr.h"
-#include "drivers/generic_ahrs/lord_ahrs_driver.h"
-#include "drivers/generic_ahrs/ros_ahrs_driver.h"
 #include "save_data_interface.h"
 
 #define NODE_NAME	"nav_pose_mgr"
 
 #define MAX_NAV_POS_QUERY_DELAY	5.0 // TODO: Make this a configurable parameter?
 
-#define AHRS_TYPE_LORD "lord"
-#define AHRS_TYPE_ROS "ros"
+#define DEFAULT_MAX_GPS_CLOCK_DRIFT_S 0.25
 
 #define DEG_TO_RAD(angle_deg) ((angle_deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(angle_rad) ((angle_rad) * 180.0f / M_PI)
 
-#define OFFSETS_SET_FRAME_ID		"manual_offset_frame"
+#define DEFAULT_EARTH_FIXED_FRAME_ID	"map"
+#define DEFAULT_ROBOT_FIXED_BASE_FRAME_ID	"base_link"
 
 namespace Numurus
 {
@@ -47,41 +46,44 @@ static inline const char* navSatServiceToString(int8_t service)
 }
 
 NavPoseMgr::NavPoseMgr() :
-	ahrs_comm_device{"ahrs_comm_device", "", this}, // e.g., /dev/ttyUSB0 for LORD via USB
-	ahrs_update_rate_hz{"ahrs_update_rate_hz", 10.0f, this},
-	ahrs_offsets_set{"ahrs_offset/offsets_set", false, this},
+	gps_fix_topic{"gps_fix_topic", "gps_fix", this},
+	init_lat_deg{"init_data/lat_deg", 0.0f, this},
+	init_lon_deg{"init_data/lon_deg", 0.0f, this},
+	init_alt_m_hae{"init_data/alt_m_hae", 0.0f, this},
+	
+	orientation_topic{"orientation_topic", "pose", this},
+	init_position_x{"init_data/position_x", 0.0f, this},
+	init_position_y{"init_data/position_y", 0.0f, this},
+	init_position_z{"init_data/position_z", 0.0f, this},
+	init_orientation_x{"init_data/orientation_x", 0.0f, this},
+	init_orientation_y{"init_data/orientation_y", 0.0f, this},
+	init_orientation_z{"init_data/orientation_z", 0.0f, this},
+	init_orientation_w{"init_data/orientation_w", 1.0f, this},
+	
+	heading_topic{"heading_topic", "heading", this},
+	init_heading_deg{"init_data/heading_deg", 0.0f, this},
+	
+	ahrs_out_frame_id{"ahrs_out_frame_id", "nepi_center_frame", this},
 	ahrs_x_offset_m{"ahrs_offset/x_m", 0.0f, this},
 	ahrs_y_offset_m{"ahrs_offset/y_m", 0.0f, this},
 	ahrs_z_offset_m{"ahrs_offset/z_m", 0.0f, this},
 	ahrs_x_rot_offset_deg{"ahrs_offset/x_rot_deg", 0.0f, this},
 	ahrs_y_rot_offset_deg{"ahrs_offset/y_rot_deg", 0.0f, this},
 	ahrs_z_rot_offset_deg{"ahrs_offset/z_rot_deg", 0.0f, this},
-	ahrs_type{"ahrs_type", AHRS_TYPE_ROS, this}, // Better default?
-	imu_topic{"imu_topic", "sensor_3dx/stereo_cam_driver/imu/data", this}, // Better default?
-	odom_topic{"odom_topic", "sensor_3dx/stereo_cam_driver/odom", this}, // Better default?
-	ahrs_src_frame_id{"ahrs_src_frame_id", "stereo_cam_imu_link", this},
-	ahrs_out_frame_id{"ahrs_out_frame_id", "3dx_center_frame", this},
-	lat_lon_alt_is_fixed{"fixed_data/lat_lon_alt_is_fixed", false, this},
-	fixed_lat_deg{"fixed_data/fixed_lat_deg", 0.0f, this},
-	fixed_lon_deg{"fixed_data/fixed_lon_deg", 0.0f, this},
-	fixed_alt_m_hae{"fixed_data/fixed_alt_m_hae", 0.0f, this},
-	orientation_is_fixed{"fixed_data/orientation_is_fixed", false, this},
-	fixed_orientation_x{"fixed_data/fixed_orientation_x", 0.0f, this},
-	fixed_orientation_y{"fixed_data/fixed_orientation_y", 0.0f, this},
-	fixed_orientation_z{"fixed_data/fixed_orientation_z", 0.0f, this},
-	fixed_orientation_w{"fixed_data/fixed_orientation_w", 1.0f, this},
-	heading_is_fixed{"fixed_data/heading_is_fixed", 1.0f, this},
-	fixed_heading_deg{"fixed_data/fixed_heading_deg", 0.0f, this},
-	fixed_heading_is_true_north{"fixed_data/fixed_heading_is_true_north", true, this},
-	ahrs_ready{false},
-	ahrs_rcv_thread{nullptr},
-	ahrs_rcv_continue{false},
-	ahrs_data_stack_max_size{1},
-	update_ahrs_nav_sat_fix{false}
+	ahrs_heading_offset_deg{"ahrs_offset/heading_offset_deg", 0.0f, this},
+
+	soft_sync_time_to_gps_topic{"soft_sync_time_to_gps_topic", false, this},
+	max_gps_clock_drift_s{"max_gps_clock_drift_s", DEFAULT_MAX_GPS_CLOCK_DRIFT_S, this},
+
+	broadcast_odom_tf{"broadcast_odom_tf", true, this},
+
+	gps_fix_rate_calculator{10},
+	orientation_rate_calculator{10},
+	heading_rate_calculator{10}
 {
 	latest_nav_sat_fix.header.seq = 0;
 	latest_nav_sat_fix.header.stamp = ros::Time(0.0);
-	latest_nav_sat_fix.header.frame_id = ahrs_out_frame_id;
+	latest_nav_sat_fix.header.frame_id = DEFAULT_ROBOT_FIXED_BASE_FRAME_ID;
 	latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_NO_FIX;
 	latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
 	latest_nav_sat_fix.latitude = 0.0;
@@ -89,20 +91,25 @@ NavPoseMgr::NavPoseMgr() :
 	latest_nav_sat_fix.altitude = 0.0;
 	latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
 
+	latest_odometry.header.seq = 0;
+	latest_odometry.header.stamp = ros::Time(0.0);
+	latest_odometry.header.frame_id = DEFAULT_EARTH_FIXED_FRAME_ID;
+	latest_odometry.child_frame_id = DEFAULT_ROBOT_FIXED_BASE_FRAME_ID;
+	latest_odometry.pose = geometry_msgs::PoseWithCovariance(); // Zero-initialized
+	latest_odometry.twist = geometry_msgs::TwistWithCovariance(); // Zero-initialized
+	// TODO: Covariance initializations?
+
+	latest_heading.header.seq = 0;
+	latest_heading.header.stamp = ros::Time(0.0);
+	latest_heading.header.frame_id = DEFAULT_EARTH_FIXED_FRAME_ID;
+	latest_heading.heading = 0.0;
+
 	save_data_if = new SaveDataInterface(this, &n, &n_priv);
 	save_data_if->registerDataProduct("nav_pose");
 }
 
 NavPoseMgr::~NavPoseMgr()
 {
-	if (nullptr != ahrs_rcv_thread)
-	{
-		delete ahrs_rcv_thread;
-	}
-	if (nullptr != ahrs)
-	{
-		delete ahrs;
-	}
 	if (nullptr != save_data_if)
 	{
 		delete save_data_if;
@@ -111,105 +118,55 @@ NavPoseMgr::~NavPoseMgr()
 
 void NavPoseMgr::init()
 {
-	SDKNode::init(); // call the base class method first
+	SDKNode::init(); // call the base class method first. After that config params are populated
+	
+	// Apply init nav/pose data - use the same callback as for reinit_solution
+	std_msgs::Empty::ConstPtr msg;
+	reinitHandler(msg);
 
-	// Now the config variables are populated
-	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
-	if (type == AHRS_TYPE_LORD)
-	{
-		ahrs = new LORDAHRSDriver();
-	}
-	else if (type == AHRS_TYPE_ROS)
-	{
-		ahrs = new ROSAHRSDriver(n, imu_topic, odom_topic);
-	}
-	else
-	{
-		ROS_FATAL("%s: Critical failure: Invalid AHRS type %s\n", getUnqualifiedName().c_str(), type.c_str());
-		return;
-	}
+	// Subscribe to configured setter API
+	gps_fix_sub = n.subscribe(gps_fix_topic, 3, &NavPoseMgr::gpsFixHandler, this);
+	heading_sub = n.subscribe(heading_topic, 3, &NavPoseMgr::headingHandler, this);
 
-	// Initialize the AHRS
-	/*
-	const AHRSRollPitchYaw rpy_rad(DEG_TO_RAD(ahrs_roll_offset_deg),
-																 DEG_TO_RAD(ahrs_pitch_offset_deg),
-															 	 DEG_TO_RAD(ahrs_yaw_offset_deg));
-	*/
-	const AHRSRollPitchYaw rpy_rad(0.0, 0.0, 0.0); // Now handling this via ROS TF, so don't apply at transform at the sensor
-	const std::time_t now_s = std::time(0);
-	std::string ahrs_comm_device_name = ahrs_comm_device; // Must assign to get the cast overload on SDKNodeParam to kick in.
-	ahrs_ready = ahrs->init(ahrs_comm_device_name.c_str(), ahrs_update_rate_hz, now_s,
-	            						 rpy_rad);
-	if (false == ahrs_ready)
-	{
-		ROS_ERROR("Unable to initialize AHRS (%s:%s) device driver\n", type.c_str(), ahrs_comm_device_name.c_str());
-		return;
-	}
-
-	// Launch the AHRS receive thread
-	ahrs_rcv_continue = true;
-	ahrs_data_stack_max_size = static_cast<size_t>(std::ceil(ahrs_update_rate_hz * MAX_NAV_POS_QUERY_DELAY));
-	ahrs_rcv_thread = new std::thread(&NavPoseMgr::serviceAHRS, this);
-
-	// Set up for fixed nav/pose data is so configured
-	const bool use_fixed_gps = lat_lon_alt_is_fixed;
-	if (true == use_fixed_gps)
-	{
-		latest_nav_sat_fix.header.seq = 0;
-		latest_nav_sat_fix.header.stamp = ros::Time::now(); // Seems as good as any time to report here
-		latest_nav_sat_fix.header.frame_id = ahrs_out_frame_id;
-		latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_FIX;
-		latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
-		latest_nav_sat_fix.latitude = fixed_lat_deg;
-		latest_nav_sat_fix.longitude = fixed_lon_deg;
-		latest_nav_sat_fix.altitude = fixed_alt_m_hae;
-		latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
-	}
-
-	const bool use_fixed_orientation = orientation_is_fixed;
-	if (true == use_fixed_orientation)
-	{
-		ahrs->overrideOrientationData(fixed_orientation_w, fixed_orientation_x, fixed_orientation_y, fixed_orientation_z);
-	}
-
-	const bool use_fixed_heading = heading_is_fixed;
-	if (true == use_fixed_heading)
-	{
-		ahrs->overrideHeadingData(fixed_heading_deg, fixed_heading_is_true_north);
-	}
+	// Orientation subscriber depends on topic type, so has additional logic
+	const std::string topic = orientation_topic;
+	setOrientationTopic(topic);
 }
 
 void NavPoseMgr::retrieveParams()
 {
 	SDKNode::retrieveParams();
-	ahrs_comm_device.retrieve();
-	ahrs_update_rate_hz.retrieve();
-	ahrs_offsets_set.retrieve();
+
+	gps_fix_topic.retrieve();
+	init_lat_deg.retrieve();
+	init_lon_deg.retrieve();
+	init_alt_m_hae.retrieve();
+	
+	orientation_topic.retrieve();
+	init_position_x.retrieve();
+	init_position_y.retrieve();
+	init_position_z.retrieve();
+	init_orientation_x.retrieve();
+	init_orientation_y.retrieve();
+	init_orientation_z.retrieve();
+	init_orientation_w.retrieve();
+	
+	heading_topic.retrieve();
+	init_heading_deg.retrieve();
+	
+	ahrs_out_frame_id.retrieve();
 	ahrs_x_offset_m.retrieve();
 	ahrs_y_offset_m.retrieve();
 	ahrs_z_offset_m.retrieve();
 	ahrs_x_rot_offset_deg.retrieve();
 	ahrs_y_rot_offset_deg.retrieve();
 	ahrs_z_rot_offset_deg.retrieve();
-	ahrs_type.retrieve();
-	imu_topic.retrieve();
-	odom_topic.retrieve();
-	ahrs_src_frame_id.retrieve();
-	ahrs_out_frame_id.retrieve();
-	lat_lon_alt_is_fixed.retrieve();
-	fixed_lat_deg.retrieve();
-	fixed_lon_deg.retrieve();
-	fixed_alt_m_hae.retrieve();
-	orientation_is_fixed.retrieve();
-	fixed_orientation_x.retrieve();
-	fixed_orientation_y.retrieve();
-	fixed_orientation_z.retrieve();
-	fixed_orientation_w.retrieve();
-	heading_is_fixed.retrieve();
-	fixed_heading_deg.retrieve();
-	fixed_heading_is_true_north.retrieve();
+	ahrs_heading_offset_deg.retrieve();
 
-	setupAHRSOffsetFrame();
+	soft_sync_time_to_gps_topic.retrieve();
+	max_gps_clock_drift_s.retrieve();
+	
+	broadcast_odom_tf.retrieve();
 }
 
 void NavPoseMgr::initServices()
@@ -227,372 +184,273 @@ void NavPoseMgr::initSubscribers()
 	// Call the base method
 	SDKNode::initSubscribers();
 
-	subscribers.push_back(n.subscribe("set_gps_fix", 3, &NavPoseMgr::setGPSFixHandler, this));
-	subscribers.push_back(n.subscribe("set_gps_fix_override", 3, &NavPoseMgr::setGPSFixOverrideHandler, this));
-	subscribers.push_back(n.subscribe("enable_gps_fix_override", 3, &NavPoseMgr::enableGPSFixOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("enable_heading_override", 3, &NavPoseMgr::enableHeadingOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("set_heading_override", 3, &NavPoseMgr::setHeadingOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("enable_attitude_override", 3, &NavPoseMgr::enableAttitudeOverrideHandler, this));
-	subscribers.push_back(n_priv.subscribe("set_attitude_override", 3, &NavPoseMgr::setAttitudeOverrideHandler, this));
-
-	subscribers.push_back(n_priv.subscribe("set_imu_topic", 3, &NavPoseMgr::setIMUTopic, this));
-	subscribers.push_back(n_priv.subscribe("set_odom_topic", 3, &NavPoseMgr::setOdomTopic, this));
-
-	subscribers.push_back(n_priv.subscribe("set_ahrs_src_frame", 3, &NavPoseMgr::setAHRSSourceFrameHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_gps_fix_topic", 3, &NavPoseMgr::setGPSFixTopicHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_init_gps_fix", 3, &NavPoseMgr::setInitGPSFixHandler, this));
+		
+	subscribers.push_back(n_priv.subscribe("set_orientation_topic", 3, &NavPoseMgr::setOrientationTopicHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_init_orientation", 3, &NavPoseMgr::setInitOrientationHandler, this));
+	
+	subscribers.push_back(n_priv.subscribe("set_heading_topic", 3, &NavPoseMgr::setHeadingTopicHandler, this));
+	subscribers.push_back(n_priv.subscribe("set_init_heading", 3, &NavPoseMgr::setInitHeadingHandler, this));
+		
 	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPoseMgr::setAHRSOutputFrameHandler, this));
-
 	subscribers.push_back(n_priv.subscribe("set_ahrs_offset", 3, &NavPoseMgr::setAHRSOffsetHandler, this));
+
+	subscribers.push_back(n_priv.subscribe("reinit_solution", 3, &NavPoseMgr::reinitHandler, this));
+}
+
+void NavPoseMgr::initPublishers()
+{
+	set_time_pub = n.advertise<std_msgs::Time>("set_time", 3);
 }
 
 bool NavPoseMgr::provideNavPose(nepi_ros_interfaces::NavPoseQuery::Request &req, nepi_ros_interfaces::NavPoseQuery::Response &resp)
 {
-	const bool latestDataRequested = (0.0 == req.query_time.toSec())? true : false;
-	if (false == latestDataRequested)
+	// TODO: Honor request time by keeping data queued and interpolating as necessary
+	resp.nav_pose.timestamp = ros::Time::now(); // For now just respond with the current time and latest data (which is individually time-stamped)
+	
+	resp.nav_pose.fix = latest_nav_sat_fix;
+	resp.nav_pose.heading = latest_heading;
+	
+	if (true == req.transform)
 	{
-		// If they aren't requesting the most recent data, ensure the request is within the valid period
-		const ros::Time now = ros::Time::now();
-		const ros::Duration elapsed = now - req.query_time;
-		if (elapsed.toSec() > MAX_NAV_POS_QUERY_DELAY)
+		nav_msgs::Odometry transformed_odom;
+		resp.transformed = transformOdomData(latest_odometry, resp.nav_pose.odom);
+		if (true == resp.transformed)
 		{
-			ROS_ERROR("%s: Requested nav/pos time (%.3f) is more than %.3f seconds ago... cannot retrieve data", getUnqualifiedName().c_str(),
-					  req.query_time.toSec(), MAX_NAV_POS_QUERY_DELAY);
-			return false;
+			const float heading_offset = ahrs_heading_offset_deg;
+			resp.nav_pose.heading.heading += heading_offset;
 		}
-	}
-
-	// Now, gather the ahrs data - under mutex protection since this is multi-threaded
-	AHRSDataSet ahrs_data;
-	{
-		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-		//ROS_INFO("Debug: Servicing nav_pose request from %lu in the stack\n", ahrs_data_stack.size());
-		if (ahrs_data_stack.size() > 0)
-		{
-			// TODO: Respect the requested data timestamp via zero-order hold, linear interpolation, etc.
-			// instead of just providing latest data via [0] index.
-			ahrs_data = ahrs_data_stack[0];
-		}
-		else // Otherwise no ahrs data... just use fixed orientation/heading data if configured
-		{
-			const bool orientation_fixed = orientation_is_fixed;
-			if (orientation_fixed == true)
-			{
-				ahrs_data.orientation_q1_i = fixed_orientation_x;
-				ahrs_data.orientation_q2_j = fixed_orientation_y;
-				ahrs_data.orientation_q3_k = fixed_orientation_z;
-				ahrs_data.orientation_q0 = fixed_orientation_w;
-				ahrs_data.orientation_valid = true;
-			}
-
-			const bool heading_fixed = heading_is_fixed;
-			if (heading_fixed == true)
-			{
-				ahrs_data.heading = fixed_heading_deg;
-				ahrs_data.heading_true_north = fixed_heading_is_true_north;
-				ahrs_data.heading_valid = true;
-			}
-		}
-	}
-
-	// Debugging
-	//ahrs_data.print();
-
-	// TODO: Simulated and non-simulated control. For now, just use the returned data
-	// (will be zero'd if we failed)
-	resp.nav_pose.timestamp = ros::Time(ahrs_data.timestamp);
-
-	// Copy in the latest position fix -- under mutex protection since this could be
-	// read by the driver thread concurrently.
-	{
-		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-		resp.nav_pose.fix = latest_nav_sat_fix;
-	}
-
-	// accel
-	resp.nav_pose.accel.linear.x = ahrs_data.accel_x;
-	resp.nav_pose.accel.linear.y = ahrs_data.accel_y;
-	resp.nav_pose.accel.linear.z = ahrs_data.accel_z;
-	resp.nav_pose.accel.angular.x = 0.0; // No data source
-	resp.nav_pose.accel.angular.y = 0.0; // No data source
-	resp.nav_pose.accel.angular.z = 0.0; // No data source
-
-	// linear velocity
-	resp.nav_pose.linear_velocity.x = ahrs_data.velocity_x;
-	resp.nav_pose.linear_velocity.y = ahrs_data.velocity_y;
-	resp.nav_pose.linear_velocity.z = ahrs_data.velocity_z;
-
-	// angular velocity -- force to zero is orientation is fixed
-	const bool force_angular_rates_zero = orientation_is_fixed;
-	if (false == force_angular_rates_zero)
-	{
-		resp.nav_pose.angular_velocity.x = ahrs_data.angular_velocity_x;
-		resp.nav_pose.angular_velocity.y = ahrs_data.angular_velocity_y;
-		resp.nav_pose.angular_velocity.z = ahrs_data.angular_velocity_z;
 	}
 	else
 	{
-		resp.nav_pose.angular_velocity.x = 0.0f;
-		resp.nav_pose.angular_velocity.y = 0.0f;
-		resp.nav_pose.angular_velocity.z = 0.0f;
+		resp.transformed = false;
+		resp.nav_pose.odom = latest_odometry;
 	}
-
-	// orientation
-	resp.nav_pose.orientation.x = ahrs_data.orientation_q1_i;
-	resp.nav_pose.orientation.y = ahrs_data.orientation_q2_j;
-	resp.nav_pose.orientation.z = ahrs_data.orientation_q3_k;
-	resp.nav_pose.orientation.w = ahrs_data.orientation_q0;
-
-	// heading
-	resp.nav_pose.heading = ahrs_data.heading;
-	resp.nav_pose.heading_true_north = ahrs_data.heading_true_north;
+	
 
 	return true;
 }
 
 bool NavPoseMgr::provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::Request&, nepi_ros_interfaces::NavPoseStatusQuery::Response &resp)
 {
-	resp.status.lat_lon_alt_is_fixed = lat_lon_alt_is_fixed;
+	resp.status.nav_sat_fix_topic = gps_fix_sub.getTopic();
+	resp.status.last_nav_sat_fix = latest_nav_sat_fix.header.stamp;
+	resp.status.nav_sat_fix_rate = avg_gps_fix_rate_hz;
 
-	{
-		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-		resp.status.last_nav_sat_fix = latest_nav_sat_fix.header.stamp;
-	}
-	resp.status.nav_sat_fix_rate = 0.0; // TODO: Keep track of this in a member variable
+	
+	resp.status.orientation_topic = orientation_sub.getTopic();
+	resp.status.last_orientation = latest_odometry.header.stamp;
+	resp.status.orientation_rate = avg_orientation_rate_hz;
 
-	resp.status.orientation_is_fixed = orientation_is_fixed;
-	resp.status.last_imu = ros::Time(0.0);
-	resp.status.imu_rate = 0.0;
-	{
-		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-		if (ahrs_data_stack.size() > 0)
-		{
-			resp.status.last_imu = ros::Time(ahrs_data_stack[0].timestamp);
-		}
-		if (ahrs_data_stack.size() > 1)
-		{
-			// Just compute the latest two-point rate
-			resp.status.imu_rate = 1.0f / (ahrs_data_stack[0].timestamp - ahrs_data_stack[1].timestamp);
-		}
-	}
-
-	resp.status.heading_is_fixed = heading_is_fixed;
+	resp.status.heading_topic = heading_sub.getTopic();
+	resp.status.last_heading = latest_heading.header.stamp;
+	resp.status.heading_rate = avg_heading_rate_hz;
 
 	// Finally, the current AHRS transform via transform_listener
 	ros::Time latest(0.0);
-	const std::string src_frame = ahrs_src_frame_id;
+	const std::string src_frame = latest_odometry.child_frame_id;
 	const std::string target_frame = ahrs_out_frame_id;
 	tf::StampedTransform transform;
-	transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
-	tf::transformStampedTFToMsg(transform, resp.status.transform);
+	try
+	{
+		//transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
+		transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
+		tf::transformStampedTFToMsg(transform, resp.status.transform);
+	}
+	catch(const std::exception& e)
+	{
+		ROS_WARN("Unable to lookup transform from %s to %s for nav/pose status... will report null transform", src_frame.c_str(), target_frame.c_str());
+	}
 
+	resp.status.heading_offset = ahrs_heading_offset_deg;
+	
 	return true;
 }
 
-void NavPoseMgr::setGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
+void NavPoseMgr::setGPSFixTopicHandler(const std_msgs::String::ConstPtr &msg)
 {
-	const bool gps_is_fixed = lat_lon_alt_is_fixed;
-	if (true == gps_is_fixed)
-	{
-		ROS_WARN_THROTTLE(10.0, "Ignoring incoming GPS fix, because GPS data is configured to be fixed");
-		return;
-	}
+	//TODO: Validation?
+	gps_fix_topic = msg->data;
+	
+	gps_fix_sub.shutdown();
+	gps_fix_sub = n.subscribe(gps_fix_topic, 3, &NavPoseMgr::gpsFixHandler, this);
+	gps_fix_rate_calculator.reset();
+	avg_gps_fix_rate_hz = 0.0;
+}
 
+void NavPoseMgr::gpsFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
+{
+	// Update the average rate via the windowed averager
+	const double delta_t = (msg->header.stamp - latest_nav_sat_fix.header.stamp).toSec();
+	avg_gps_fix_rate_hz = 1.0 / gps_fix_rate_calculator.calculateNext(delta_t);
+
+	// TODO: Any validation?
 	latest_nav_sat_fix = *msg;
 
-	// Update the AHRS -- this allows it to calculate a declination and provide a true
-	// north heading.
-	if (sensor_msgs::NavSatStatus::STATUS_NO_FIX != latest_nav_sat_fix.status.status)
+	if (true == soft_sync_time_to_gps_topic)
 	{
-		// Must interact with the driver in a threadsafe way -- the service thread
-		// handles all calls into driver API, just signal it here
-		update_ahrs_nav_sat_fix = true; // atomic variable
-	}
-}
-
-void NavPoseMgr::setGPSFixOverrideHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
-{
-	fixed_lat_deg = msg->latitude;
-	fixed_lon_deg = msg->longitude;
-	fixed_alt_m_hae = msg->altitude;
-
-	const bool is_fixed = lat_lon_alt_is_fixed;
-	if (true == is_fixed)
-	{
-		latest_nav_sat_fix = *msg;
-	}
-}
-
-void NavPoseMgr::enableGPSFixOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
-{
-	lat_lon_alt_is_fixed = msg->data;
-
-	if (true == msg->data)
-	{
-		latest_nav_sat_fix.header.stamp = ros::Time::now(); // Seems as good as any time to report here
-		latest_nav_sat_fix.header.frame_id = ahrs_out_frame_id;
-		latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_FIX;
-		latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
-		latest_nav_sat_fix.latitude = fixed_lat_deg;
-		latest_nav_sat_fix.longitude = fixed_lon_deg;
-		latest_nav_sat_fix.altitude = fixed_alt_m_hae;
-	}
-	else
-	{
-		// Clear everything until the next update arrives
-		latest_nav_sat_fix.header.stamp = ros::Time(0.0);
-		latest_nav_sat_fix.header.frame_id = ahrs_out_frame_id;
-		latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_NO_FIX;
-		latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
-		latest_nav_sat_fix.latitude = 0.0;
-		latest_nav_sat_fix.longitude = 0.0;
-		latest_nav_sat_fix.altitude = 0.0;
-	}
-}
-
-void NavPoseMgr::setHeadingOverrideHandler(const nepi_ros_interfaces::Heading::ConstPtr &msg)
-{
-	if (msg->heading <= -360.0 || msg->heading >= 360.0)
-	{
-		ROS_ERROR("Invalid heading override: %f deg... ignoring", msg->heading);
-	}
-	else
-	{
-		ahrs->overrideHeadingData(msg->heading, msg->true_north);
-		fixed_heading_deg = msg->heading;
-		fixed_heading_is_true_north = msg->true_north;
-	}
-}
-
-void NavPoseMgr::enableHeadingOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
-{
-	heading_is_fixed = msg->data;
-	if (false == msg->data)
-	{
-		ahrs->clearHeadingOverride();
-	}
-	else
-	{
-		ahrs->overrideHeadingData(fixed_heading_deg, fixed_heading_is_true_north);
-	}
-}
-
-void NavPoseMgr::enableAttitudeOverrideHandler(const std_msgs::Bool::ConstPtr &msg)
-{
-	orientation_is_fixed = msg->data;
-	if (false == msg->data)
-	{
-		ahrs->clearOrientationOverride();
-	}
-	else
-	{
-		geometry_msgs::QuaternionStamped quat_msg;
-		quat_msg.header.seq = 0;
-		quat_msg.header.stamp = ros::Time::now();
-		quat_msg.header.frame_id = ahrs_out_frame_id;
-		quat_msg.quaternion.x = fixed_orientation_x;
-		quat_msg.quaternion.y = fixed_orientation_y;
-		quat_msg.quaternion.z = fixed_orientation_z;
-		quat_msg.quaternion.w = fixed_orientation_w;
-		setAttitudeOverrideHandler(quat_msg);
-	}
-}
-
-void NavPoseMgr::setAttitudeOverrideHandler(const geometry_msgs::QuaternionStamped &msg)
-{
-	// Need to map into configured AHRS frame, so it looks like it came from standard AHRS
-	const std::string out_frame = ahrs_out_frame_id;
-	const std::string src_frame = msg.header.frame_id;
-	if (false == transform_listener.frameExists(src_frame))
-	{
-		ROS_ERROR("Attitude override has invalid frame id: %s... override not applied", src_frame.c_str());
-		return;
-	}
-
-	geometry_msgs::QuaternionStamped quat_out;
-	try
-	{
-		transform_listener.transformQuaternion(ahrs_out_frame_id, msg, quat_out);
-	}
-	catch (tf2::TransformException &ex)
-	{
-		ROS_WARN_THROTTLE(1.0, "%s", ex.what());
-	}
-
-	fixed_orientation_x = quat_out.quaternion.x;
-	fixed_orientation_y = quat_out.quaternion.y;
-	fixed_orientation_z = quat_out.quaternion.z;
-	fixed_orientation_w = quat_out.quaternion.w;
-	ahrs->overrideOrientationData(fixed_orientation_w, fixed_orientation_x, fixed_orientation_y, fixed_orientation_z);
-}
-
-void NavPoseMgr::ensureAHRSTypeROS()
-{
-	std::string type = ahrs_type; // Force a cast for SDKNodeParam to string
-	if (type != AHRS_TYPE_ROS)
-	{
-		ROS_WARN("Changing AHRS type to ROS... No nav/pos data until both IMU and Odom topics are set");
-		if (nullptr != ahrs)
+		const ros::Duration drift = ros::Time::now() - latest_nav_sat_fix.header.stamp;
+		const double drift_s = drift.toSec();
+		if ((drift_s > max_gps_clock_drift_s) || (drift_s < -max_gps_clock_drift_s))
 		{
-			delete ahrs;
+			ROS_INFO_THROTTLE(10.0, "Updating system clock to GPS topic timestamp (drift was %.3fs)", drift_s);
+			std_msgs::Time time_msg;
+			time_msg.data = latest_nav_sat_fix.header.stamp;
+			set_time_pub.publish(time_msg);
 		}
-		ahrs = new ROSAHRSDriver(n);
-		ahrs_type = AHRS_TYPE_ROS;
 	}
-	else if (nullptr == ahrs)
-	{
-		ahrs = new ROSAHRSDriver(n);
-	}
+
+	saveDataIfNecessary();
 }
 
-void NavPoseMgr::setIMUTopic(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setInitGPSFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 {
-	{
-		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-		ensureAHRSTypeROS();
-		dynamic_cast<ROSAHRSDriver*>(ahrs)->setIMUSubscription(n, msg->data);
-	}
-	imu_topic = msg->data;
+	init_lat_deg = msg->latitude;
+	init_lon_deg = msg->longitude;
+	init_alt_m_hae = msg->altitude;
 }
 
-void NavPoseMgr::setOdomTopic(const std_msgs::String::ConstPtr &msg)
+void NavPoseMgr::setOrientationTopicHandler(const std_msgs::String::ConstPtr &msg)
 {
-	{
-		std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-		ensureAHRSTypeROS();
-		dynamic_cast<ROSAHRSDriver*>(ahrs)->setOdomSubscription(n, msg->data);
-	}
-	odom_topic = msg->data;
+	setOrientationTopic(msg->data);
+	orientation_rate_calculator.reset();
+	avg_orientation_rate_hz = 0.0;
 }
 
-void NavPoseMgr::setAHRSSourceFrameHandler(const std_msgs::String::ConstPtr &msg)
+
+void NavPoseMgr::setOrientationTopic(const std::string &topic)
 {
-	const std::string src_frame = msg->data;
-	if (false == transform_listener.frameExists(src_frame))
+	// Need to do some introspection to determine topic type
+	ros::master::V_TopicInfo master_topics;
+	ros::master::getTopics(master_topics);
+	for (ros::master::V_TopicInfo::iterator it = master_topics.begin() ; it != master_topics.end(); it++) 
 	{
-		ROS_ERROR("Cannot set source frame to %s -- frame does not exist", src_frame.c_str());
-		return;
+    	const ros::master::TopicInfo& info = *it;
+		if (info.name == topic) 
+		{
+			if (info.datatype == "sensor_msgs/Imu")
+			{
+				orientation_topic = topic;
+				orientation_sub.shutdown();
+				orientation_sub = n.subscribe(orientation_topic, 3, &NavPoseMgr::imuHandler, this);
+				return;
+			}
+			else if (info.datatype == "nav_msgs/Odometry")
+			{
+				orientation_topic = topic;
+				orientation_sub.shutdown();
+				orientation_sub = n.subscribe(orientation_topic, 3, &NavPoseMgr::odomHandler, this);
+				return;
+			}
+			// TODO: geometry_msgs/Quaternion (for very simple pose publishers)?
+			else
+			{
+				ROS_ERROR("Cannot obtain orientation from topic %s of type %s", info.name.c_str(), info.datatype.c_str());
+			}
+		}
 	}
-	// Clear the offsets_set flag and apply -- mutual exclusion here
-	ahrs_offsets_set = false;
-	setupAHRSOffsetFrame();
 
-	ahrs_src_frame_id = src_frame; // TODO: Thread safety?
+	// If we get this far, the topic is not yet known to rosmaster, so just default to Odometry
+	// TODO: Should we validate this periodically? What happens if IMU msg arrives on this topic?
+	ROS_WARN("Specified orientation topic %s is not yet published, so datatype cannot be determined... will assume nav_msgs/Odometry", topic.c_str());
+	orientation_topic = topic;
+	orientation_sub.shutdown();
+	orientation_sub = n.subscribe(orientation_topic, 3, &NavPoseMgr::odomHandler, this);
+}
 
+void NavPoseMgr::odomHandler(const nav_msgs::Odometry::ConstPtr &msg)
+{
+	// Update the average rate via the windowed averager
+	const double delta_t = (msg->header.stamp - latest_odometry.header.stamp).toSec();
+	avg_orientation_rate_hz = 1.0 / orientation_rate_calculator.calculateNext(delta_t);
+
+	// TODO: Validation?
+	latest_odometry = *msg;
+
+	// And broadcast TF if so configured
+	if (true == broadcast_odom_tf)
+	{
+		broadcastLatestOdomAsTF();
+	}
+	saveDataIfNecessary();
+}
+
+void NavPoseMgr::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
+{
+	// Update the average rate via the windowed averager
+	const double delta_t = (msg->header.stamp - latest_odometry.header.stamp).toSec();
+	avg_orientation_rate_hz = 1.0 / orientation_rate_calculator.calculateNext(delta_t);
+
+	// Reset odometry -- we'll fill in just those fields that we can glean from IMU message
+	latest_odometry = nav_msgs::Odometry();
+	latest_odometry.header = msg->header;
+	latest_odometry.child_frame_id = msg->header.frame_id; // Repeat same frame_id?
+	latest_odometry.pose.pose.orientation = msg->orientation;
+
+	// Broadcasting odom_tf here would be useless since frame_id and child_frame_id are identical
+
+	saveDataIfNecessary();
+}
+
+void NavPoseMgr::setInitOrientationHandler(const geometry_msgs::QuaternionStamped::ConstPtr &msg)
+{
+	init_orientation_x = msg->quaternion.x;
+	init_orientation_y = msg->quaternion.y;
+	init_orientation_z = msg->quaternion.z;
+	init_orientation_w = msg->quaternion.w;
+}
+
+void NavPoseMgr::setHeadingTopicHandler(const std_msgs::String::ConstPtr &msg)
+{
+	//TODO: Validation?
+	heading_topic = msg->data;
+
+	heading_sub.shutdown();
+	heading_sub = n.subscribe(heading_topic, 3, &NavPoseMgr::headingHandler, this);
+	heading_rate_calculator.reset();
+	avg_heading_rate_hz = 0.0;
+}
+
+void NavPoseMgr::headingHandler(const std_msgs::Float64::ConstPtr &msg)
+{
+	// Update the average rate via the windowed averager
+	ros::Time now = ros::Time::now();
+	double delta_t = (now - latest_heading.header.stamp).toSec();
+	avg_heading_rate_hz = 1.0 / heading_rate_calculator.calculateNext(delta_t);
+
+	latest_heading.header.stamp = now; // No timestamp in the input, so just use current time
+	latest_heading.header.frame_id = latest_odometry.header.frame_id; // Assume heading matches odometry source
+	++latest_heading.header.seq;
+	latest_heading.heading = msg->data;
+
+	saveDataIfNecessary();
+}
+
+void NavPoseMgr::setInitHeadingHandler(const std_msgs::Float64::ConstPtr &msg)
+{
+	if (msg->data <= -360.0 || msg->data >= 360.0)
+	{
+		ROS_ERROR("Invalid init heading: %f deg... ignoring", msg->data);
+	}
+	else
+	{
+		init_heading_deg = msg->data;
+	}
 }
 
 void NavPoseMgr::setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg)
 {
 	const std::string output_frame = msg->data;
-	if (false == transform_listener.frameExists(output_frame))
+	if (ahrs_out_frame_id != output_frame)
 	{
-		ROS_ERROR("Cannot set output frame to %s -- frame does not exist", output_frame.c_str());
-		return;
+		ahrs_out_frame_id = output_frame;
+		setupStaticAHRSTransform();
 	}
-	ahrs_out_frame_id = output_frame; // TODO: Thread safety?
 }
 
 void NavPoseMgr::setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPtr &msg)
 {
-	ahrs_offsets_set = true;
 	ahrs_x_offset_m = msg->translation.x;
 	ahrs_y_offset_m = msg->translation.y;
 	ahrs_z_offset_m = msg->translation.z;
@@ -601,96 +459,12 @@ void NavPoseMgr::setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPt
 	ahrs_y_rot_offset_deg = msg->rotation.y;
 	ahrs_z_rot_offset_deg = msg->rotation.z;
 
-	setupAHRSOffsetFrame();
+	ahrs_heading_offset_deg = msg->heading;
+
+	setupStaticAHRSTransform(true); // User is pushing new offsets, so assume they want these
 }
 
-
-void NavPoseMgr::serviceAHRS()
-{
-	// Time update rate
-	const ros::Duration TIME_UPDATE_INTERVAL(1.0); // 1Hz
-	ros::Time last_update_time = ros::Time::now();
-
-	// No sense running this thread much, much faster
-	// than the rest of the system can keep up. 100Hz is
-	// probably fine.
-	ros::Rate service_rate(AHRS_DRIVER_SERVICE_RATE);
-	while((true == ahrs_rcv_continue && true == ros::ok()))
-	{
-		// Query for the latest data
-		AHRSDataSet ahrs_data;
-		const bool got_data = ahrs->receiveLatestData(ahrs_data); // Blocks most of the time
-
-		if (true == update_ahrs_nav_sat_fix) // atomic variable
-		{
-			std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-			AHRSReferencePosition ref_pos;
-			ref_pos.latitude_deg = latest_nav_sat_fix.latitude;
-			ref_pos.longitude_deg = latest_nav_sat_fix.longitude;
-			ref_pos.altitude_m = latest_nav_sat_fix.altitude;
-			ahrs->updateReferencePosition(ref_pos);
-
-			update_ahrs_nav_sat_fix = false;
-		}
-
-		// Send time updates at intervals -- do this quickly after receiveLatestData()
-		// to help ensure an empty rcv buffer... that's easier on everybody
-		const ros::Time now = ros::Time::now();
-		if (now - last_update_time >= TIME_UPDATE_INTERVAL)
-		{
-			if (true == ahrs->updateSystemTime(now.sec))
-			{
-				last_update_time = now;
-			}
-		}
-
-		// Now, stuff the data on our stack as long as it is sufficiently "valid"
-		if ((true == got_data) && (true == validateAHRSData(ahrs_data)))
-		{
-			// For now, we transform every ahrs_data that goes on the stack, but
-			// we could optimize by transforming only those that are getting saved to file
-			// or transmitted as part of a request -- however, that requires that the
-			// data timestamp is within the transform_listener buffer window (10 secs by default),
-			// so would need some safeguards.
-			if (false == transformAHRSData(ahrs_data)) // Transforms in place
-			{
-				// Just return -- don't stick it on the stack and don't save it
-				return; // error logged upstream
-			}
-
-			std::lock_guard<std::mutex> lk(ahrs_data_stack_mutex);
-			// Clear the end of this fixed-size stack if necessary before adding a new
-			// element
-			while(ahrs_data_stack.size() >= ahrs_data_stack_max_size)
-			{
-				ahrs_data_stack.pop_back();
-			}
-			ahrs_data_stack.push_front(ahrs_data);
-
-			// And save the data to disk if necessary
-			saveDataIfNecessary(ahrs_data);
-		}
-
-		service_rate.sleep();
-	}
-
-	ROS_WARN("Terminating AHRS service thread");
-}
-
-bool NavPoseMgr::validateAHRSData(const AHRSDataSet &ahrs_data)
-{
-	if ((AHRS_FILTER_STAT_RUN_VAL != ahrs_data.filter_state) ||
-			(false == ahrs_data.accel_valid) ||
-			(false == ahrs_data.angular_velocity_valid) ||
-			(false == ahrs_data.orientation_valid))
-			//|| (false == ahrs_data.heading_valid))
-	{
-		return false;
-	}
-	return true;
-}
-
-void NavPoseMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
+void NavPoseMgr::saveDataIfNecessary()
 {
 	// Good place to check if we need to close a previously open file due to
 	// data saving being disabled
@@ -729,169 +503,166 @@ void NavPoseMgr::saveDataIfNecessary(const AHRSDataSet &ahrs_data)
 		return;
 	}
 
-	// Print the GPS fix here directly
-	sensor_msgs::NavSatFix nav_sat_fix;
+	nav_msgs::Odometry transformed_odom;
+	if (false == save_data_if->saveRawEnabled())
 	{
-		std::lock_guard<std::mutex> lk(latest_nav_sat_fix_mutex);
-		nav_sat_fix = latest_nav_sat_fix;
+		// TODO: Error reporting?
+		transformOdomData(latest_odometry, transformed_odom);
 	}
-	fprintf(data_fd, "  -  gps:\n");
-	fprintf(data_fd, "       timestamp: %f\n", nav_sat_fix.header.stamp.toSec());
-	fprintf(data_fd, "       status: %s\n", navSatStatusToString(nav_sat_fix.status.status));
-	fprintf(data_fd, "       service: %s\n", navSatServiceToString(nav_sat_fix.status.service));
-	fprintf(data_fd, "       latitude: %f\n", nav_sat_fix.latitude);
-	fprintf(data_fd, "       longitude: %f\n", nav_sat_fix.longitude);
-	fprintf(data_fd, "       altitude: %f\n", nav_sat_fix.altitude);
-	// Let the AHRS data print itself
 
-	ahrs_data.printYAML(data_fd, "     ");
+	// Print the GPS fix here directly
+	// GPS
+	fprintf(data_fd, "  -  gps:\n");
+	fprintf(data_fd, "       timestamp: %f\n", latest_nav_sat_fix.header.stamp.toSec());
+	fprintf(data_fd, "       status: %s\n", navSatStatusToString(latest_nav_sat_fix.status.status));
+	fprintf(data_fd, "       service: %s\n", navSatServiceToString(latest_nav_sat_fix.status.service));
+	fprintf(data_fd, "       latitude: %f\n", latest_nav_sat_fix.latitude);
+	fprintf(data_fd, "       longitude: %f\n", latest_nav_sat_fix.longitude);
+	fprintf(data_fd, "       altitude: %f\n", latest_nav_sat_fix.altitude);
+	
+	// Odometry
+	fprintf(data_fd, "     odometry:\n");
+	fprintf(data_fd, "       timestamp: %f\n", latest_odometry.header.stamp.toSec());
+	fprintf(data_fd, "       source_frame: %s\n", latest_odometry.header.frame_id.c_str());
+	fprintf(data_fd, "       output_frame: %s\n", transformed_odom.header.frame_id.c_str());
+	fprintf(data_fd, "       position:\n");
+	fprintf(data_fd, "          x: %f\n", latest_odometry.pose.pose.position.x);
+	fprintf(data_fd, "          y: %f\n", latest_odometry.pose.pose.position.y);
+	fprintf(data_fd, "          z: %f\n", latest_odometry.pose.pose.position.z);
+	fprintf(data_fd, "       orientation:\n");
+	fprintf(data_fd, "          quaternion_x: %f\n", latest_odometry.pose.pose.orientation.x);
+	fprintf(data_fd, "          quaternion_y: %f\n", latest_odometry.pose.pose.orientation.y);
+	fprintf(data_fd, "          quaternion_z: %f\n", latest_odometry.pose.pose.orientation.z);
+	fprintf(data_fd, "          quaternion_w: %f\n", latest_odometry.pose.pose.orientation.w);
+	fprintf(data_fd, "       linear_velocity:\n");
+    fprintf(data_fd, "          x: %f\n", latest_odometry.twist.twist.linear.x);
+    fprintf(data_fd, "          y: %f\n", latest_odometry.twist.twist.linear.y);
+    fprintf(data_fd, "          z: %f\n", latest_odometry.twist.twist.linear.z);
+	fprintf(data_fd, "       angular_velocity:\n");
+    fprintf(data_fd, "          x: %f\n", latest_odometry.twist.twist.angular.x);
+    fprintf(data_fd, "          y: %f\n", latest_odometry.twist.twist.angular.y);
+    fprintf(data_fd, "          z: %f\n", latest_odometry.twist.twist.angular.z);
+	
+	// Heading 
+    fprintf(data_fd, "     heading:\n");
+	fprintf(data_fd, "       timestamp: %f\n", latest_heading.header.stamp.toSec());
+	fprintf(data_fd, "       deg: %f\n", latest_heading.heading);
+    fprintf(data_fd, "       ref: %s\n", (true == latest_heading.true_north)? "true" : "magnetic");
 }
 
-bool NavPoseMgr::transformAHRSData(AHRSDataSet &ahrs_data)
+bool NavPoseMgr::transformOdomData(const nav_msgs::Odometry &odom_in, nav_msgs::Odometry &odom_out)
 {
-	geometry_msgs::Vector3Stamped vect3_in;
-	vect3_in.header.seq = 0;
-	vect3_in.header.stamp = ros::Time(ahrs_data.timestamp);
-	vect3_in.header.frame_id = ahrs_src_frame_id;
+	const std::string output_frame_id = ahrs_out_frame_id;
+	// Already in the requested frame -- don't transform
+	if (output_frame_id == odom_in.child_frame_id)
+	{
+		return false;
+	}
 
-	bool transformed = false;
-	bool timed_out = false;
-	ros::Time start_time = ros::Time::now();
-	ros::Duration timeout_period(0.5); // TODO: Configurable?
-	while ((transformed == false) && (timed_out == false))
+	odom_out = odom_in;
+	
+	geometry_msgs::PoseStamped pose_in, pose_out;
+	pose_in.header = odom_in.header;
+	pose_in.header.frame_id = odom_in.child_frame_id; // Transform should be from the odom output frame to the ahrs_out_frame... easy place to make a mistake.
+	pose_in.pose = odom_in.pose.pose;
+	
+	geometry_msgs::Vector3Stamped linear_rates_in, linear_rates_out, angular_rates_in, angular_rates_out;
+	linear_rates_in.header = odom_in.header;
+	linear_rates_in.vector = odom_in.twist.twist.linear;
+	angular_rates_in.header = odom_in.header;
+	angular_rates_in.vector = odom_in.twist.twist.angular;
+	
+	try
+	{
+		transform_listener.transformPose(output_frame_id, pose_in, pose_out);
+		transform_listener.transformVector(output_frame_id, linear_rates_in, linear_rates_out);
+		transform_listener.transformVector(output_frame_id, angular_rates_in, angular_rates_out);
+	}
+	catch(const std::exception& e)
+	{
+		ROS_WARN("Failed to transform odometry from %s to %s (%s)... data is unadjusted", 
+				 odom_in.header.frame_id.c_str(), output_frame_id.c_str(), e.what());
+		return false;
+	}
+
+	// If we get this far, all transforms succeeded so update the output with transformed values
+	odom_out.header.frame_id = odom_in.header.frame_id;
+	odom_out.child_frame_id = output_frame_id;
+	odom_out.pose.pose = pose_out.pose;
+	odom_out.twist.twist.linear = linear_rates_out.vector;
+	odom_out.twist.twist.angular = angular_rates_out.vector;
+	return true;
+}
+
+void NavPoseMgr::setupStaticAHRSTransform(bool force_override)
+{
+	// First, check if there is an existing transform between source and destination. If so, that takes precedence.
+	const std::string src_frame = latest_odometry.child_frame_id;
+	const std::string target_frame = ahrs_out_frame_id;
+	const ros::Time latest(0.0);
+	tf::StampedTransform transform;
+	
+	if (force_override == false) 
 	{
 		try
 		{
-			geometry_msgs::Vector3Stamped vect3_out;
-
-			// Linear accelerations
-			if (ahrs_data.accel_valid)
-			{
-				vect3_in.vector.x = ahrs_data.accel_x;
-				vect3_in.vector.y = ahrs_data.accel_y;
-				vect3_in.vector.z = ahrs_data.accel_z;
-
-				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
-
-				ahrs_data.accel_x = vect3_out.vector.x;
-				ahrs_data.accel_y = vect3_out.vector.y;
-				ahrs_data.accel_z = vect3_out.vector.z;
-			}
-
-			// Linear Velocity
-			vect3_in.vector.x = ahrs_data.velocity_x;
-			vect3_in.vector.y = ahrs_data.velocity_y;
-			vect3_in.vector.z = ahrs_data.velocity_z;
-
-			transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
-
-			ahrs_data.velocity_x = vect3_out.vector.x;
-			ahrs_data.velocity_y = vect3_out.vector.y;
-			ahrs_data.velocity_z = vect3_out.vector.z;
-
-			// Angular Velocity
-			if (ahrs_data.angular_velocity_valid)
-			{
-				vect3_in.vector.x = ahrs_data.angular_velocity_x;
-				vect3_in.vector.y = ahrs_data.angular_velocity_y;
-				vect3_in.vector.z = ahrs_data.angular_velocity_z;
-
-				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
-
-				ahrs_data.angular_velocity_x = vect3_out.vector.x;
-				ahrs_data.angular_velocity_y = vect3_out.vector.y;
-				ahrs_data.angular_velocity_z = vect3_out.vector.z;
-			}
-
-			// Orientation
-			if (ahrs_data.orientation_valid)
-			{
-				geometry_msgs::QuaternionStamped quat_in;
-				quat_in.header.seq = 0;
-				quat_in.header.stamp = ros::Time(ahrs_data.timestamp);
-				quat_in.header.frame_id = ahrs_src_frame_id;
-
-				geometry_msgs::QuaternionStamped quat_out;
-
-				quat_in.quaternion.x = ahrs_data.orientation_q1_i;
-				quat_in.quaternion.y = ahrs_data.orientation_q2_j;
-				quat_in.quaternion.z = ahrs_data.orientation_q3_k;
-				quat_in.quaternion.w = ahrs_data.orientation_q0;
-
-				transform_listener.transformQuaternion(ahrs_out_frame_id, quat_in, quat_out);
-
-				ahrs_data.orientation_q1_i = quat_out.quaternion.x;
-				ahrs_data.orientation_q2_j = quat_out.quaternion.y;
-				ahrs_data.orientation_q3_k = quat_out.quaternion.z;
-				ahrs_data.orientation_q0 = quat_out.quaternion.w;
-			}
-
-			// Heading
-			// TODO: Maybe transformation of heading should be configurable?
-			/*
-			if (ahrs_data.heading_valid)
-			{
-				// Make a vector out of the heading and transform it
-				vect3_in.vector.x = cos(DEG_TO_RAD(ahrs_data.heading));
-				vect3_in.vector.y = -sin(DEG_TO_RAD(ahrs_data.heading));
-				vect3_in.vector.z = 0.0;
-
-				transform_listener.transformVector(ahrs_out_frame_id, vect3_in, vect3_out);
-
-				// Now make a heading from the output vector
-				// TODO: How do we know which dimension of the new frame is 'forward'???
-				ahrs_data.heading = RAD_TO_DEG(atan2(vect3_out.vector.x, vect3_out.vector.y));
-			}
-			*/
-			// If we get this far, set the exit condition
-			transformed = true;
+			//transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
+			transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
+			const tf::Vector3 translation = transform.getOrigin();
+			const tf::Matrix3x3 mat = tf::Matrix3x3(transform.getRotation());
+			double r,p,y;
+			mat.getRPY(r,p,y);
+			ROS_INFO("Detected existing transform from %s to %s:\n\tTranslation = [%f,%f,%f]\n\tRotation = [%f,%f,%f]... not overriding with static",
+					src_frame.c_str(), target_frame.c_str(), translation.getX(), translation.getY(), translation.getZ(),
+					RAD_TO_DEG(r), RAD_TO_DEG(p), RAD_TO_DEG(y));
+			return;
 		}
-		catch (tf2::TransformException &ex)
+		catch(const std::exception& e)
 		{
-			if ((ros::Time::now() - start_time) > timeout_period)
-			{
-				ROS_WARN_THROTTLE(1.0, "%s", ex.what());
-				ROS_WARN_THROTTLE(1.0, "Frame listener timeout while trying to transform AHRS data");
-				timed_out = true;
-			}
+			ROS_INFO("No existing transform from %s to %s -- will create one based on configured AHRS offsets", 
+					src_frame.c_str(), target_frame.c_str());
 		}
 	}
-	return (transformed && !timed_out);
+	
+	ROS_INFO("Setting up static transform from %s to %s:\n\tTranslation = [%f,%f,%f]\n\tRotation = [%f,%f,%f]",
+			src_frame.c_str(), target_frame.c_str(),
+			(float)ahrs_x_offset_m, (float)ahrs_y_offset_m, (float)ahrs_z_offset_m,
+			(float)ahrs_x_rot_offset_deg, (float)ahrs_y_rot_offset_deg, (float)ahrs_z_rot_offset_deg);
+		
+	// Build the transform
+	geometry_msgs::TransformStamped static_transform;
+	static_transform.header.stamp = ros::Time::now();
+	static_transform.header.frame_id = ahrs_out_frame_id; // Seems backwards, but works
+	static_transform.child_frame_id = src_frame; // Seems backwards, but works
+	static_transform.transform.translation.x = ahrs_x_offset_m;
+	static_transform.transform.translation.y = ahrs_y_offset_m;
+	static_transform.transform.translation.z = ahrs_z_offset_m;
+	tf2::Quaternion quat;
+	quat.setRPY(DEG_TO_RAD(ahrs_x_rot_offset_deg), DEG_TO_RAD(ahrs_y_rot_offset_deg), DEG_TO_RAD(ahrs_z_rot_offset_deg));
+	static_transform.transform.rotation.x = quat.x();
+	static_transform.transform.rotation.y = quat.y();
+	static_transform.transform.rotation.z = quat.z();
+	static_transform.transform.rotation.w = quat.w();
+		
+	// Send the transform
+	ahrs_offsets_broadcaster.sendTransform(static_transform);
+	
 }
 
-void NavPoseMgr::setupAHRSOffsetFrame()
+void NavPoseMgr::broadcastLatestOdomAsTF()
 {
-	if (true == ahrs_offsets_set)
-	{
-		ROS_INFO("Setting up a new AHRS Offset Frame:\n\tTranslation = [%f,%f,%f]\n\tRotation = [%f,%f,%f]",
-						 (float)ahrs_x_offset_m, (float)ahrs_y_offset_m, (float)ahrs_z_offset_m,
-						 (float)ahrs_x_rot_offset_deg, (float)ahrs_y_offset_m, (float)ahrs_z_offset_m);
-		geometry_msgs::TransformStamped static_transform;
-		static_transform.header.stamp = ros::Time::now();
-		static_transform.header.frame_id = ahrs_out_frame_id;
-		static_transform.child_frame_id = OFFSETS_SET_FRAME_ID;
-		static_transform.transform.translation.x = ahrs_x_offset_m;
-		static_transform.transform.translation.y = ahrs_y_offset_m;
-		static_transform.transform.translation.z = ahrs_z_offset_m;
-		tf2::Quaternion quat;
-		quat.setRPY(DEG_TO_RAD(ahrs_x_rot_offset_deg), DEG_TO_RAD(ahrs_y_rot_offset_deg), DEG_TO_RAD(ahrs_z_rot_offset_deg));
-		static_transform.transform.rotation.x = quat.x();
-		static_transform.transform.rotation.y = quat.y();
-		static_transform.transform.rotation.z = quat.z();
-		static_transform.transform.rotation.w = quat.w();
-		static_transform_broadcaster.sendTransform(static_transform);
+	geometry_msgs::TransformStamped transform;
+	transform.header.stamp = latest_odometry.header.stamp;
+	//transform.header.frame_id = latest_odometry.header.frame_id;
+	//transform.child_frame_id = latest_odometry.child_frame_id;
+	transform.header.frame_id = latest_odometry.child_frame_id;
+	transform.child_frame_id = latest_odometry.header.frame_id;
+	transform.transform.translation.x = latest_odometry.pose.pose.position.x;
+	transform.transform.translation.y = latest_odometry.pose.pose.position.y;
+	transform.transform.translation.z = latest_odometry.pose.pose.position.z;
+	transform.transform.rotation = latest_odometry.pose.pose.orientation;
 
-		// Update the output frame
-		ahrs_src_frame_id = OFFSETS_SET_FRAME_ID;
-	}
-	else // Clearing the offsets
-	{
-		// If we are clearing from previously set, set the source to the output as the fallback
-		if (ahrs_src_frame_id == OFFSETS_SET_FRAME_ID)
-		{
-			ahrs_src_frame_id = ahrs_out_frame_id;
-		}
-	}
+	ahrs_pose_broadcaster.sendTransform(transform);
 }
 
 void NavPoseMgr::startNewDataFile()
@@ -924,10 +695,10 @@ void NavPoseMgr::startNewDataFile()
 	// Now print the header info
 	// First, the current AHRS transform
 	ros::Time latest(0.0);
-	const std::string src_frame = ahrs_src_frame_id;
-	const std::string target_frame = ahrs_out_frame_id;
+	const std::string src_frame = latest_odometry.child_frame_id; // Seems backwards, but works
+	const std::string target_frame = ahrs_out_frame_id; // Seems backwards, but works
 	tf::StampedTransform transform;
-	transform_listener.lookupTransform(src_frame, target_frame, latest, transform); // API description is backwards
+	transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
 	geometry_msgs::TransformStamped transform_msg;
 	tf::transformStampedTFToMsg(transform, transform_msg);
 
@@ -951,6 +722,57 @@ void NavPoseMgr::startNewDataFile()
 	fflush(data_fd);
 
 	need_new_data_file = false;
+}
+
+void NavPoseMgr::reinitHandler(const std_msgs::Empty::ConstPtr &msg)
+{
+	ros::Time now = ros::Time::now();
+	// Apply init nav/pose data
+	latest_nav_sat_fix.header.seq = 0;
+	latest_nav_sat_fix.header.stamp = now; // Seems as good as any time to report here
+	latest_nav_sat_fix.header.frame_id = DEFAULT_ROBOT_FIXED_BASE_FRAME_ID;
+	// Assume purely zero'd defaults should be treated as NO_FIX
+	if ((0.0 == init_lat_deg) && (0.0 == init_lon_deg) && (0.0 == init_alt_m_hae))
+	{
+		latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_NO_FIX;
+	}
+	else
+	{
+		latest_nav_sat_fix.status.status = sensor_msgs::NavSatStatus::STATUS_FIX;
+	}
+	
+	latest_nav_sat_fix.status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
+	latest_nav_sat_fix.latitude = init_lat_deg;
+	latest_nav_sat_fix.longitude = init_lon_deg;
+	latest_nav_sat_fix.altitude = init_alt_m_hae;
+	latest_nav_sat_fix.position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+	
+	latest_odometry.header.seq = 0;
+	latest_odometry.header.frame_id = DEFAULT_EARTH_FIXED_FRAME_ID;
+	latest_odometry.header.stamp = now;
+	latest_odometry.child_frame_id = DEFAULT_ROBOT_FIXED_BASE_FRAME_ID;
+	latest_odometry.pose.pose.position.x = init_position_x;
+	latest_odometry.pose.pose.position.y = init_position_y;
+	latest_odometry.pose.pose.position.z = init_position_z;
+	latest_odometry.pose.pose.orientation.x = init_orientation_x;
+	latest_odometry.pose.pose.orientation.y = init_orientation_y;
+	latest_odometry.pose.pose.orientation.z = init_orientation_z;
+	latest_odometry.pose.pose.orientation.w = init_orientation_w;
+	// TODO: Configurable twist initialization?
+	latest_odometry.twist = geometry_msgs::TwistWithCovariance(); // zero-initialized
+	
+	latest_heading.header.seq = 0;
+	latest_heading.header.frame_id = DEFAULT_EARTH_FIXED_FRAME_ID;
+	latest_heading.header.stamp = now;
+	latest_heading.heading = init_heading_deg;
+	
+	setupStaticAHRSTransform();
+
+	// And broadcast initial odom TF if so configured
+	if (true == broadcast_odom_tf)
+	{
+		broadcastLatestOdomAsTF();
+	}	
 }
 
 } // namespace Numurus
