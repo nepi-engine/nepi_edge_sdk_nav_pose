@@ -28,13 +28,13 @@ private:
   NodeParam<std::string> gpsd_ip;
   NodeParam<int> gpsd_port;
   NodeParam<std::string> gps_frame_id;
-  NodeParam<std::string> attitude_frame_id;
-  NodeParam<bool> provides_attitude;
+  NodeParam<std::string> orientation_frame_id;
+  NodeParam<bool> provides_orientation;
 
   // Publishers
   ros::Publisher gps_fix_pub;
   ros::Publisher heading_pub;
-  ros::Publisher attitude_pub;
+  ros::Publisher orientation_pub;
   ros::Publisher gps_stream_pub;
 
   // GPSD internals

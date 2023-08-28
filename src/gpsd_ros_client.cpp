@@ -4,7 +4,7 @@
 
 #include "std_msgs/String.h"
 #include "sensor_msgs/NavSatFix.h"
-#include "geometry_msgs/QuaternionStamped.h"
+#include "sensor_msgs/Imu.h"
 #include "nepi_ros_interfaces/Heading.h"
 
 // Important that this one comes after sensor_msgs/NavSatFix.h because
@@ -30,9 +30,9 @@ namespace Numurus
 GPSDRosClient::GPSDRosClient() :
   gpsd_ip{"gpsd_ip", "localhost", this},
   gpsd_port{"gpsd_port", GPSD_PORT_DEFAULT, this},
-  gps_frame_id{"gps_frame_id", "gps_frame", this},
-  attitude_frame_id{"attitude_frame_id", "ahrs_frame", this},
-  provides_attitude{"provides_attitude", true, this}
+  gps_frame_id{"gps_frame_id", "base_link", this},
+  orientation_frame_id{"orientation_frame_id", "nepi_center_frame", this},
+  provides_orientation{"provides_orientation", true, this}
 {
   init(); // RAII
 
@@ -92,15 +92,16 @@ void GPSDRosClient::retrieveParams()
   gpsd_ip.retrieve();
   gpsd_port.retrieve();
   gps_frame_id.retrieve();
-  attitude_frame_id.retrieve();
-  provides_attitude.retrieve();
+  orientation_frame_id.retrieve();
+  provides_orientation.retrieve();
 }
 
 void GPSDRosClient::initPublishers()
 {
-  gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("set_gps_fix", 3);
-  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("nav_pose_mgr/set_heading_override", 3);
-  attitude_pub = n.advertise<geometry_msgs::QuaternionStamped>("nav_pose_mgr/set_attitude_override", 3);
+  // TODO: Should these topic names be configurable?
+  gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("gpsd_fix", 3);
+  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("gpsd_heading", 3);
+  orientation_pub = n.advertise<sensor_msgs::Imu>("gpsd_orientation", 3);
   gps_stream_pub = n.advertise<std_msgs::String>("gps_status_stream", 3);
 }
 
@@ -190,21 +191,21 @@ void GPSDRosClient::serviceGPSDOnce()
 
     // TODO: How can we differentiate between when heading set and when complete attitude (e.g., HPR or PAUV sentence?)
     // For now, just differentiate as a config option
-    if (true == provides_attitude)
+    if (true == provides_orientation)
     {
-      geometry_msgs::QuaternionStamped quat_msg;
-      quat_msg.header.stamp = ros::Time(gpsd_data->attitude.mtime.tv_sec, gpsd_data->attitude.mtime.tv_nsec);
-      quat_msg.header.frame_id = attitude_frame_id;
-
+      sensor_msgs::Imu imu_msg;
+      imu_msg.header.stamp = ros::Time(gpsd_data->attitude.mtime.tv_sec, gpsd_data->attitude.mtime.tv_nsec);
+      imu_msg.header.frame_id = orientation_frame_id;
+      
       tf2::Quaternion q;
       q.setRPY(DEG_TO_RAD(gpsd_data->attitude.roll), DEG_TO_RAD(gpsd_data->attitude.pitch), 0.0); // No yaw in these messages
-      tf2::convert(q, quat_msg.quaternion);
+      tf2::convert(q, imu_msg.orientation);
 
       //ROS_WARN("Debug - Got RP(Y): [%f, %f, (0.0)] - as quaternion: [%f, %fi, %fj, %fk]",
       //         gpsd_data->attitude.roll, gpsd_data->attitude.pitch,
       //         quat_msg.quaternion.w, quat_msg.quaternion.x, quat_msg.quaternion.y, quat_msg.quaternion.z);
 
-      attitude_pub.publish(quat_msg);
+      orientation_pub.publish(imu_msg);
     }
   }
 }
