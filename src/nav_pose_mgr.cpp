@@ -195,6 +195,7 @@ void NavPoseMgr::initSubscribers()
 		
 	subscribers.push_back(n_priv.subscribe("set_ahrs_out_frame", 3, &NavPoseMgr::setAHRSOutputFrameHandler, this));
 	subscribers.push_back(n_priv.subscribe("set_ahrs_offset", 3, &NavPoseMgr::setAHRSOffsetHandler, this));
+	subscribers.push_back(n_priv.subscribe("enable_gps_clock_sync", 3, &NavPoseMgr::enableGPSClockSyncHandler, this));
 
 	subscribers.push_back(n_priv.subscribe("reinit_solution", 3, &NavPoseMgr::reinitHandler, this));
 }
@@ -264,6 +265,8 @@ bool NavPoseMgr::provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::R
 	}
 
 	resp.status.heading_offset = ahrs_heading_offset_deg;
+
+	resp.status.gps_clock_sync_enabled = soft_sync_time_to_gps_topic;
 	
 	return true;
 }
@@ -467,6 +470,12 @@ void NavPoseMgr::setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPt
 	ahrs_heading_offset_deg = msg->heading;
 
 	setupStaticAHRSTransform(true); // User is pushing new offsets, so assume they want these
+}
+
+void NavPoseMgr::enableGPSClockSyncHandler(const std_msgs::Bool::ConstPtr &msg)
+{
+	ROS_INFO("%s system clock sync. from GPS", (msg->data)? "Enabling" : "Disabling");
+	soft_sync_time_to_gps_topic = msg->data;
 }
 
 void NavPoseMgr::saveDataIfNecessary()

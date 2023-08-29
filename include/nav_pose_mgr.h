@@ -120,6 +120,8 @@ private:
 	
 	void setAHRSOutputFrameHandler(const std_msgs::String::ConstPtr &msg);
 	void setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPtr &msg);
+	void enableGPSClockSyncHandler(const std_msgs::Bool::ConstPtr &msg);
+
 	bool transformOdomData(const nav_msgs::Odometry &odom_in, nav_msgs::Odometry &odom_out);
 	void setupStaticAHRSTransform(bool force_override = false);
 	void broadcastLatestOdomAsTF();
