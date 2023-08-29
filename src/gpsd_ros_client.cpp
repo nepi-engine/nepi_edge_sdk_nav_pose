@@ -99,9 +99,9 @@ void GPSDRosClient::retrieveParams()
 void GPSDRosClient::initPublishers()
 {
   // TODO: Should these topic names be configurable?
-  gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("gpsd_fix", 3);
-  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("gpsd_heading", 3);
-  orientation_pub = n.advertise<sensor_msgs::Imu>("gpsd_orientation", 3);
+  gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("gps_fix_gpsd", 3);
+  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("heading_gpsd", 3);
+  orientation_pub = n.advertise<sensor_msgs::Imu>("orientation_gpsd", 3);
   gps_stream_pub = n.advertise<std_msgs::String>("gps_status_stream", 3);
 }
 

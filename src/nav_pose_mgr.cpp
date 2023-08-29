@@ -385,10 +385,15 @@ void NavPoseMgr::imuHandler(const sensor_msgs::Imu::ConstPtr &msg)
 	// Reset odometry -- we'll fill in just those fields that we can glean from IMU message
 	latest_odometry = nav_msgs::Odometry();
 	latest_odometry.header = msg->header;
-	latest_odometry.child_frame_id = msg->header.frame_id; // Repeat same frame_id?
+	latest_odometry.header.frame_id = DEFAULT_EARTH_FIXED_FRAME_ID; // TODO: Configurable?
+	latest_odometry.child_frame_id = msg->header.frame_id; 
 	latest_odometry.pose.pose.orientation = msg->orientation;
 
-	// Broadcasting odom_tf here would be useless since frame_id and child_frame_id are identical
+	// And broadcast TF if so configured
+	if (true == broadcast_odom_tf)
+	{
+		broadcastLatestOdomAsTF();
+	}
 
 	saveDataIfNecessary();
 }
@@ -524,7 +529,7 @@ void NavPoseMgr::saveDataIfNecessary()
 	fprintf(data_fd, "     odometry:\n");
 	fprintf(data_fd, "       timestamp: %f\n", latest_odometry.header.stamp.toSec());
 	fprintf(data_fd, "       source_frame: %s\n", latest_odometry.header.frame_id.c_str());
-	fprintf(data_fd, "       output_frame: %s\n", transformed_odom.header.frame_id.c_str());
+	fprintf(data_fd, "       output_frame: %s\n", transformed_odom.child_frame_id.c_str());
 	fprintf(data_fd, "       position:\n");
 	fprintf(data_fd, "          x: %f\n", latest_odometry.pose.pose.position.x);
 	fprintf(data_fd, "          y: %f\n", latest_odometry.pose.pose.position.y);
