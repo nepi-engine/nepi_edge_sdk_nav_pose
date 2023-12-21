@@ -27,9 +27,9 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
 #include "std_msgs/String.h"
+#include "std_msgs/Float64.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "sensor_msgs/Imu.h"
-#include "nepi_ros_interfaces/Heading.h"
 
 // Important that this one comes after sensor_msgs/NavSatFix.h because
 // they have conflicting definitions for STATUS_NO_FIX
@@ -124,7 +124,7 @@ void GPSDRosClient::initPublishers()
 {
   // TODO: Should these topic names be configurable?
   gps_fix_pub = n.advertise<sensor_msgs::NavSatFix>("gps_fix_gpsd", 3);
-  heading_pub = n.advertise<nepi_ros_interfaces::Heading>("heading_gpsd", 3);
+  heading_pub = n.advertise<std_msgs::Float64>("heading_gpsd", 3);
   orientation_pub = n.advertise<sensor_msgs::Imu>("orientation_gpsd", 3);
   gps_stream_pub = n.advertise<std_msgs::String>("gps_status_stream", 3);
 }
@@ -208,9 +208,8 @@ void GPSDRosClient::serviceGPSDOnce()
   if (gpsd_data->set & ATTITUDE_SET)
   {
     //ROS_WARN("Debug - Got heading: %f", gpsd_data->attitude.heading);
-    nepi_ros_interfaces::Heading heading_msg;
-    heading_msg.heading = gpsd_data->attitude.heading;
-    heading_msg.true_north = true;
+    std_msgs::Float64 heading_msg;
+    heading_msg.data = gpsd_data->attitude.heading;
     heading_pub.publish(heading_msg);
 
     // TODO: How can we differentiate between when heading set and when complete attitude (e.g., HPR or PAUV sentence?)
