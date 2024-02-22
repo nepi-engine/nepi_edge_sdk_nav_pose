@@ -285,7 +285,7 @@ bool NavPoseMgr::provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::R
 	}
 	catch(const std::exception& e)
 	{
-		ROS_WARN("Unable to lookup transform from %s to %s for nav/pose status... will report null transform", src_frame.c_str(), target_frame.c_str());
+		ROS_WARN_THROTTLE(30, "Unable to lookup transform from %s to %s for nav/pose status... will report null transform", src_frame.c_str(), target_frame.c_str());
 	}
 
 	resp.status.heading_offset = ahrs_heading_offset_deg;
@@ -618,7 +618,7 @@ bool NavPoseMgr::transformOdomData(const nav_msgs::Odometry &odom_in, nav_msgs::
 	}
 	catch(const std::exception& e)
 	{
-		ROS_WARN("Failed to transform odometry from %s to %s (%s)... data is unadjusted", 
+		ROS_WARN_THROTTLE(30, "Failed to transform odometry from %s to %s (%s)... data is unadjusted", 
 				 odom_in.header.frame_id.c_str(), output_frame_id.c_str(), e.what());
 		return false;
 	}
