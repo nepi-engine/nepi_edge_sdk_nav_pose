@@ -1,3 +1,3 @@
-[submodule "num_gpsd"]
-	path = num_gpsd
-	url = git@github.com:numurus-nepi/num_gpsd.git
+[submodule "nepi_gpsd"]
+	path = nepi_gpsd
+	url = git@github.com:nepi-engine/nepi_gpsd.git

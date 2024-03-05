@@ -24,7 +24,7 @@ Contact Information:
 -->
 # nepi_edge_sdk_nav_pose #
 
-This repository hosts the NEPI nav_pose_mgr ROS node to support GPS and IMU integration for NEPI devices. It also includes the submodule _num_gpsd_, which is a lightly modified GPSD fork to include some custom NMEA sentences and a GPSD-to-ROS bridge node to convert GPSD-served nav and pose to ROS topics and services.
+This repository hosts the NEPI nav_pose_mgr ROS node to support GPS and IMU integration for NEPI devices. It also includes the submodule _nepi_gpsd_, which is a lightly modified GPSD fork to include some custom NMEA sentences and a GPSD-to-ROS bridge node to convert GPSD-served nav and pose to ROS topics and services.
 
 ### Build and Install ###
 This repository is typically built as part of the _nepi_base_ws_ catkin workspace. Refer to that project's top-level README for build and install instructions.
