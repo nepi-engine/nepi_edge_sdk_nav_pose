@@ -88,6 +88,7 @@ NavPoseMgr::NavPoseMgr() :
 	gps_fix_rate_calculator{10},
 	orientation_rate_calculator{10},
 	heading_rate_calculator{10}
+	
 {
 	latest_nav_sat_fix.header.seq = 0;
 	latest_nav_sat_fix.header.stamp = ros::Time(0.0);
@@ -206,6 +207,12 @@ void NavPoseMgr::initSubscribers()
 	subscribers.push_back(n_priv.subscribe("enable_gps_clock_sync", 3, &NavPoseMgr::enableGPSClockSyncHandler, this));
 
 	subscribers.push_back(n_priv.subscribe("reinit_solution", 3, &NavPoseMgr::reinitHandler, this));
+
+	subscribers.push_back(n.subscribe("save_data", 3, &NavPoseMgr::saveDataHandler, this));
+	subscribers.push_back(n_priv.subscribe("save_data", 3, &NavPoseMgr::saveDataHandler, this));
+	subscribers.push_back(n.subscribe("snapshot_trigger", 3,&NavPoseMgr::snapshotTriggerHandler, this));
+	subscribers.push_back(n_priv.subscribe("snapshot_trigger", 3, &NavPoseMgr::snapshotTriggerHandler, this));
+
 }
 
 void NavPoseMgr::initPublishers()
@@ -269,7 +276,7 @@ bool NavPoseMgr::provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::R
 	}
 	catch(const std::exception& e)
 	{
-		ROS_WARN_THROTTLE(30, "Unable to lookup transform from %s to %s for nav/pose status... will report null transform", src_frame.c_str(), target_frame.c_str());
+		//ROS_WARN_THROTTLE(30, "Unable to lookup transform from %s to %s for nav/pose status... will report null transform", src_frame.c_str(), target_frame.c_str());
 	}
 
 	resp.status.heading_offset = ahrs_heading_offset_deg;
@@ -305,13 +312,12 @@ void NavPoseMgr::gpsFixHandler(const sensor_msgs::NavSatFix::ConstPtr &msg)
 		const double drift_s = drift.toSec();
 		if ((drift_s > max_gps_clock_drift_s) || (drift_s < -max_gps_clock_drift_s))
 		{
-			ROS_INFO_THROTTLE(10.0, "Updating system clock to GPS topic timestamp (drift was %.3fs)", drift_s);
+			//ROS_INFO_THROTTLE(10.0, "Updating system clock to GPS topic timestamp (drift was %.3fs)", drift_s);
 			std_msgs::Time time_msg;
 			time_msg.data = latest_nav_sat_fix.header.stamp;
 			set_time_pub.publish(time_msg);
 		}
 	}
-
 	saveDataIfNecessary();
 }
 
@@ -357,14 +363,14 @@ void NavPoseMgr::setOrientationTopic(const std::string &topic)
 			// TODO: geometry_msgs/Quaternion (for very simple pose publishers)?
 			else
 			{
-				ROS_ERROR("Cannot obtain orientation from topic %s of type %s", info.name.c_str(), info.datatype.c_str());
+				//ROS_ERROR("Cannot obtain orientation from topic %s of type %s", info.name.c_str(), info.datatype.c_str());
 			}
 		}
 	}
 
 	// If we get this far, the topic is not yet known to rosmaster, so just default to Odometry
 	// TODO: Should we validate this periodically? What happens if IMU msg arrives on this topic?
-	ROS_WARN("Specified orientation topic %s is not yet published, so datatype cannot be determined... will assume nav_msgs/Odometry", topic.c_str());
+	//ROS_WARN("Specified orientation topic %s is not yet published, so datatype cannot be determined... will assume nav_msgs/Odometry", topic.c_str());
 	orientation_topic = topic;
 	orientation_sub.shutdown();
 	orientation_sub = n.subscribe(orientation_topic, 3, &NavPoseMgr::odomHandler, this);
@@ -384,6 +390,7 @@ void NavPoseMgr::odomHandler(const nav_msgs::Odometry::ConstPtr &msg)
 	{
 		broadcastLatestOdomAsTF();
 	}
+
 	saveDataIfNecessary();
 }
 
@@ -447,7 +454,7 @@ void NavPoseMgr::setInitHeadingHandler(const std_msgs::Float64::ConstPtr &msg)
 {
 	if (msg->data <= -360.0 || msg->data >= 360.0)
 	{
-		ROS_ERROR("Invalid init heading: %f deg... ignoring", msg->data);
+		//ROS_ERROR("Invalid init heading: %f deg... ignoring", msg->data);
 	}
 	else
 	{
@@ -482,55 +489,135 @@ void NavPoseMgr::setAHRSOffsetHandler(const nepi_ros_interfaces::Offset::ConstPt
 
 void NavPoseMgr::enableGPSClockSyncHandler(const std_msgs::Bool::ConstPtr &msg)
 {
-	ROS_INFO("%s system clock sync. from GPS", (msg->data)? "Enabling" : "Disabling");
+	//ROS_INFO("%s system clock sync. from GPS", (msg->data)? "Enabling" : "Disabling");
 	soft_sync_time_to_gps_topic = msg->data;
 }
 
+
+
+
 void NavPoseMgr::saveDataIfNecessary()
+{	
+	const bool saving_enabled = save_data_if->saveContinuousEnabled();
+	//const std::string save_prefix = save_data_if->getSavePrefixString();
+	//const bool new_prefix = LastSavePrefix != save_prefix;
+	if (true == saving_enabled)
+	{
+		if (nullptr != data_fd)
+		{
+			saveNewData();  // New file opened by saveDataHandler
+		}
+	}	
+}
+
+
+
+void NavPoseMgr::startNewDataFile()
 {
-	// Good place to check if we need to close a previously open file due to
-	// data saving being disabled
-	const bool save_enabled = save_data_if->saveContinuousEnabled();
-	if ((false == save_enabled) && (nullptr != data_fd))
+	if (nullptr != data_fd)
 	{
 		fclose(data_fd);
 		data_fd = nullptr;
+	}
+	// Build the filename
+	const std::string display_name = _display_name;
+	const std::string tstamp_str = save_data_if->getTimestampString();
+	const std::string qualified_filename = save_data_if->getFullPathFilename(tstamp_str, display_name + "_nav", "yaml");
+	const std::string save_prefix = save_data_if->getSavePrefixString();
+	// Now create the file -- need to do this as a low-level open() call to set the permissions
+	int fh = open(qualified_filename.c_str(), O_WRONLY | O_CREAT, 0664);
+	if (fh < 0)
+	{
+		//ROS_ERROR("Unable to create file %s for saving nav/pos data", qualified_filename.c_str());
+		return;
+	}
+	ROS_INFO("Created new nav_pose data file %s", qualified_filename.c_str());
+
+	// Now open it as a stream
+	data_fd = fdopen(fh, "w");
+	if (data_fd == nullptr)
+	{
+		//ROS_ERROR("Unable to open file stream for saving nav/pos data");
 		return;
 	}
 
-	const bool needs_save = save_enabled && save_data_if->dataProductShouldSave("nav_pose");
-	if (false == needs_save)
+	//LastSavePrefix = save_prefix;
+
+	// Now print the header info
+	// First, the current AHRS transform
+	/*
+	ros::Time latest(0.0);
+	const std::string src_frame = latest_odometry.child_frame_id; // Seems backwards, but works
+	const std::string target_frame = ahrs_out_frame_id; // Seems backwards, but works
+	tf::StampedTransform transform;
+	transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
+	geometry_msgs::TransformStamped transform_msg;
+	tf::transformStampedTFToMsg(transform, transform_msg);
+
+	*/
+
+	fprintf(data_fd, "# Nav/Pose Data File\n");
+	fprintf(data_fd, "start_time: %s\n", tstamp_str.c_str());
+
+	/*
+	fprintf(data_fd, "transform:\n");
+	fprintf(data_fd, "  source_frame_id: %s\n", transform_msg.header.frame_id.c_str());
+	//fprintf(data_fd, "  target_frame_id: %s\n", transform_msg.child_frame_id.c_str());
+	fprintf(data_fd, "  # Translation in meters\n");
+	fprintf(data_fd, "  translation:\n");
+	fprintf(data_fd, "    x: %f\n", transform_msg.transform.translation.x);
+	fprintf(data_fd, "    y: %f\n", transform_msg.transform.translation.y);
+	fprintf(data_fd, "    z: %f\n", transform_msg.transform.translation.z);
+	fprintf(data_fd, "  #Rotation Quaternion\n");
+	fprintf(data_fd, "  rotation:\n");
+	fprintf(data_fd, "    x: %f\n", transform_msg.transform.rotation.x);
+	fprintf(data_fd, "    y: %f\n", transform_msg.transform.rotation.y);
+	fprintf(data_fd, "    z: %f\n", transform_msg.transform.rotation.z);
+	fprintf(data_fd, "    w: %f\n", transform_msg.transform.rotation.w);
+	fprintf(data_fd, "entries:\n");
+	*/
+
+	fflush(data_fd);
+
+
+	// clear new_save_triggered
+	bool new_save_triggered = save_data_if->newSaveTriggered(); 
+	saveNewData();
+
+}
+
+void NavPoseMgr::closeDataFile()
+{
+	if (nullptr != data_fd)
 	{
-		return;
+		fclose(data_fd);
+		data_fd = nullptr;
 	}
+}
 
-	// Do the calibration if necessary
-	if (true == save_data_if->calibrationShouldSave())
-	{
-		// TODO: Any calibration. i.e., complete list of transfer frames?
-
-		// Also use this to indicate that we need a new file started -- the logic is the same as
-		// for when we need a new calibration file saved, so this is just a bit of a hack
-		need_new_data_file = true;
-	}
-
-	if ((true == need_new_data_file) || (nullptr == data_fd))
-	{
-		startNewDataFile();
-	}
-
+void NavPoseMgr::saveNewData()
+{
 	if (nullptr == data_fd) // Failed to open a new file
 	{
 		// Error logged upstream, just return
 		return;
 	}
 
+	// check if new save_triggered by file prefix change
+	bool file_name_update = save_data_if->newSaveTriggered(); 
+	if (true == file_name_update)
+	{
+		startNewDataFile();
+	}
+
 	nav_msgs::Odometry transformed_odom;
+	/*
 	if (false == save_data_if->saveRawEnabled())
 	{
-		// TODO: Error reporting?
+	    // Implement Transform
 		transformOdomData(latest_odometry, transformed_odom);
 	}
+	*/
 
 	// Print the GPS fix here directly
 	// GPS
@@ -546,7 +633,7 @@ void NavPoseMgr::saveDataIfNecessary()
 	fprintf(data_fd, "     odometry:\n");
 	fprintf(data_fd, "       timestamp: %f\n", latest_odometry.header.stamp.toSec());
 	fprintf(data_fd, "       source_frame: %s\n", latest_odometry.header.frame_id.c_str());
-	fprintf(data_fd, "       output_frame: %s\n", transformed_odom.child_frame_id.c_str());
+	//fprintf(data_fd, "       output_frame: %s\n", transformed_odom.child_frame_id.c_str());
 	fprintf(data_fd, "       position:\n");
 	fprintf(data_fd, "          x: %f\n", latest_odometry.pose.pose.position.x);
 	fprintf(data_fd, "          y: %f\n", latest_odometry.pose.pose.position.y);
@@ -570,6 +657,15 @@ void NavPoseMgr::saveDataIfNecessary()
 	fprintf(data_fd, "       timestamp: %f\n", latest_heading.header.stamp.toSec());
 	fprintf(data_fd, "       deg: %f\n", latest_heading.heading);
     fprintf(data_fd, "       ref: %s\n", (true == latest_heading.true_north)? "true" : "magnetic");
+
+	// Reset snapshot enabled value and check if saving still needed
+	save_data_if->snapshotReset("nav_pose");
+	const bool saving_enabled = save_data_if->saveContinuousEnabled();
+	const bool snapshot_enabled = save_data_if->snapshotEnabled("nav_pose");
+	if ((false == saving_enabled) && (false == snapshot_enabled))
+	{
+		closeDataFile();
+	}
 }
 
 bool NavPoseMgr::transformOdomData(const nav_msgs::Odometry &odom_in, nav_msgs::Odometry &odom_out)
@@ -602,8 +698,8 @@ bool NavPoseMgr::transformOdomData(const nav_msgs::Odometry &odom_in, nav_msgs::
 	}
 	catch(const std::exception& e)
 	{
-		ROS_WARN_THROTTLE(30, "Failed to transform odometry from %s to %s (%s)... data is unadjusted", 
-				 odom_in.header.frame_id.c_str(), output_frame_id.c_str(), e.what());
+		//ROS_WARN_THROTTLE(30, "Failed to transform odometry from %s to %s (%s)... data is unadjusted", 
+		//		 odom_in.header.frame_id.c_str(), output_frame_id.c_str(), e.what());
 		return false;
 	}
 
@@ -687,64 +783,6 @@ void NavPoseMgr::broadcastLatestOdomAsTF()
 	ahrs_pose_broadcaster.sendTransform(transform);
 }
 
-void NavPoseMgr::startNewDataFile()
-{
-	if (nullptr != data_fd)
-	{
-		fclose(data_fd);
-		data_fd = nullptr;
-	}
-	// Build the filename
-	const std::string display_name = _display_name;
-	const std::string tstamp_str = save_data_if->getTimestampString();
-	const std::string qualified_filename = save_data_if->getFullPathFilename(tstamp_str, display_name + "_nav", "yaml");
-	// Now create the file -- need to do this as a low-level open() call to set the permissions
-	int fh = open(qualified_filename.c_str(), O_WRONLY | O_CREAT, 0664);
-	if (fh < 0)
-	{
-		ROS_ERROR("Unable to create file %s for saving nav/pos data", qualified_filename.c_str());
-		return;
-	}
-
-	// Now open it as a stream
-	data_fd = fdopen(fh, "w");
-	if (data_fd == nullptr)
-	{
-		ROS_ERROR("Unable to open file stream for saving nav/pos data");
-		return;
-	}
-
-	// Now print the header info
-	// First, the current AHRS transform
-	ros::Time latest(0.0);
-	const std::string src_frame = latest_odometry.child_frame_id; // Seems backwards, but works
-	const std::string target_frame = ahrs_out_frame_id; // Seems backwards, but works
-	tf::StampedTransform transform;
-	transform_listener.lookupTransform(target_frame, src_frame, latest, transform);
-	geometry_msgs::TransformStamped transform_msg;
-	tf::transformStampedTFToMsg(transform, transform_msg);
-
-	fprintf(data_fd, "# Nav/Pose Data File\n");
-	fprintf(data_fd, "start_time: %s\n", tstamp_str.c_str());
-	fprintf(data_fd, "transform:\n");
-	fprintf(data_fd, "  source_frame_id: %s\n", transform_msg.header.frame_id.c_str());
-	fprintf(data_fd, "  target_frame_id: %s\n", transform_msg.child_frame_id.c_str());
-	fprintf(data_fd, "  # Translation in meters\n");
-	fprintf(data_fd, "  translation:\n");
-	fprintf(data_fd, "    x: %f\n", transform_msg.transform.translation.x);
-	fprintf(data_fd, "    y: %f\n", transform_msg.transform.translation.y);
-	fprintf(data_fd, "    z: %f\n", transform_msg.transform.translation.z);
-	fprintf(data_fd, "  #Rotation Quaternion\n");
-	fprintf(data_fd, "  rotation:\n");
-	fprintf(data_fd, "    x: %f\n", transform_msg.transform.rotation.x);
-	fprintf(data_fd, "    y: %f\n", transform_msg.transform.rotation.y);
-	fprintf(data_fd, "    z: %f\n", transform_msg.transform.rotation.z);
-	fprintf(data_fd, "    w: %f\n", transform_msg.transform.rotation.w);
-	fprintf(data_fd, "entries:\n");
-	fflush(data_fd);
-
-	need_new_data_file = false;
-}
 
 void NavPoseMgr::reinitHandler(const std_msgs::Empty::ConstPtr &msg)
 {
@@ -797,12 +835,32 @@ void NavPoseMgr::reinitHandler(const std_msgs::Empty::ConstPtr &msg)
 	}	
 }
 
+
+void NavPoseMgr::saveDataHandler(const nepi_ros_interfaces::SaveData::ConstPtr &msg)
+{
+		if ((msg->save_continuous == true) && (nullptr == data_fd))
+		{
+			startNewDataFile();
+			ROS_INFO("Save Data msg recieved, creating new nav_pose file");
+		}
+}
+
+void NavPoseMgr::snapshotTriggerHandler(const std_msgs::Empty::ConstPtr &msg)
+{
+	bool saving_enabled = save_data_if->saveContinuousEnabled();
+	if (false == saving_enabled)
+	{
+		startNewDataFile();
+		ROS_INFO("Snapshot Trigger msg recieved, creating new nav_pose file");
+	}
+}
+
 } // namespace Numurus
 
 int main(int argc, char **argv)
 {
 	ros::init(argc, argv, NODE_NAME);
-	ROS_INFO("Starting the %s node", NODE_NAME);
+	//ROS_INFO("Starting the %s node", NODE_NAME);
 
 	Numurus::NavPoseMgr nav_pose_mgr;
 	nav_pose_mgr.run();
