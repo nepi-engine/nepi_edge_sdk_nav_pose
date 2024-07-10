@@ -110,6 +110,8 @@ private:
 	ApproxMovingAvg heading_rate_calculator;
 	double avg_heading_rate_hz = 0.0;
 
+	bool checkForNewFile = true;
+
 	bool provideNavPose(nepi_ros_interfaces::NavPoseQuery::Request &req, nepi_ros_interfaces::NavPoseQuery::Response &resp);
 	bool provideNavPoseStatus(nepi_ros_interfaces::NavPoseStatusQuery::Request &req, nepi_ros_interfaces::NavPoseStatusQuery::Response &resp);
 
@@ -137,6 +139,7 @@ private:
 
 	void saveDataIfNecessary();
 	void startNewDataFile();
+	void writeDataToFile();
 	void closeDataFile();
 	void saveNewData();
 	void reinitHandler(const std_msgs::Empty::ConstPtr &msg);
