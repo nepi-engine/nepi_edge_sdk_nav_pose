@@ -775,6 +775,7 @@ void NavPoseMgr::startNewDataFile()
 	//ROS_INFO("startNewDataFile saving new nav_pose data to file");
 	fprintf(data_fd, "# Nav/Pose Data File\n");
 	fprintf(data_fd, "start_time: %s\n", tstamp_str.c_str());
+	fprintf(data_fd, "data:\n");
 
 	/*
 	fprintf(data_fd, "transform:\n");
